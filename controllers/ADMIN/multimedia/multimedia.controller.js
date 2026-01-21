@@ -22,58 +22,15 @@ const storage = multer.diskStorage({
     }
 });
 
-// parallel storage for thumbnails
-const thumbnailStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadPath = path.join(__dirname, '../../../../var/www/html/multimedia/thumbnails');
-
-        fs.mkdir(uploadPath, { recursive: true }, (error) => {
-            if (error) {
-                return cb(error);
-            }
-            cb(null, uploadPath);
-        });
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'thumb-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
 const fileFilter = (req, file, cb) => {
     const tipo = req.query.type?.toString().toLowerCase();
 
     const allowedTypes = {
-        pdf: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
         audios: ['audio/mpeg', 'audio/wav', 'audio/aac'],
         ar: ['model/gltf-binary', 'application/octet-stream'],
-        otros: [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'text/plain',
-            'application/zip',
-            'application/x-rar-compressed'
-        ]
+        videos: ['video/mp4', 'video/webm', 'video/ogg'],
+        juegos: ['application/json'],
     };
-
-    if (tipo === 'otros') {
-        if (!file) {
-            return cb(null, true);
-        }
-
-        if (allowedTypes.otros.includes(file.mimetype)) {
-            return cb(null, true);
-        } else {
-            const error = new Error(`Tipo de archivo no permitido para ${tipo}. Tipo recibido: ${file.mimetype}`);
-            error.code = 'LIMIT_FILE_TYPE';
-            return cb(error, false);
-        }
-    }
 
     if (!tipo || !allowedTypes[tipo]?.includes(file.mimetype)) {
         const error = new Error(`Tipo de archivo no permitido para ${tipo}`);
@@ -93,7 +50,6 @@ const uploadFile = multer({
 const handleFormData = (req, res, next) => {
     const tipo = req.query.type?.toString();
     if (tipo === 'Videos') {
-        // Para videos, puede venir 'image' (miniatura) y 'videofile' (video local)
         const videoStorage = multer.diskStorage({
             destination: (req, file, cb) => {
                 if (file.fieldname === 'videofile') {
@@ -103,7 +59,6 @@ const handleFormData = (req, res, next) => {
                         cb(null, uploadPath);
                     });
                 } else {
-                    // Para miniaturas
                     const uploadPath = path.join(__dirname, '../../../../var/www/html/multimedia/thumbnails');
                     fs.mkdir(uploadPath, { recursive: true }, (error) => {
                         if (error) return cb(error);
@@ -124,19 +79,17 @@ const handleFormData = (req, res, next) => {
         const upload = multer({
             storage: videoStorage,
             limits: {
-                fileSize: 500 * 1024 * 1024, // 500MB para videos
-                fieldSize: 10 * 1024 * 1024 // 10MB para otros campos
+                fileSize: 500 * 1024 * 1024,
+                fieldSize: 10 * 1024 * 1024
             },
             fileFilter: (req, file, cb) => {
                 if (file.fieldname === 'videofile') {
-                    // Validar que sea un video
                     if (file.mimetype.startsWith('video/')) {
                         cb(null, true);
                     } else {
                         cb(new Error('Solo se permiten archivos de video'), false);
                     }
                 } else if (file.fieldname === 'image') {
-                    // Validar que sea una imagen
                     if (file.mimetype.startsWith('image/')) {
                         cb(null, true);
                     } else {
@@ -178,7 +131,7 @@ exports.handleUpload = async (req, res) => {
         if (missingFields.length > 0) {
             return res.status(400).json({
                 error: `Campos requeridos faltantes: ${missingFields.join(', ')}`,
-                detalle: 'Asegúrate de enviar: type, titulo (o mul_titulo)'
+                detalle: 'Asegúrate de enviar: type, titulo'
             });
         }
 
@@ -216,11 +169,8 @@ exports.handleUpload = async (req, res) => {
                 }
                 if (req.file) {
                     const fullPath = req.file.path;
-                    // Extraer ruta relativa: /multimedia/audios/archivo.ext o /multimedia/ar/archivo.ext
                     const relativePath = fullPath.match(/\/multimedia\/.*/)?.[0] || fullPath.replace(/.*[\/\\]multimedia[\/\\]/, '/multimedia/');
                     metadata = relativePath.replace(/\\/g, '/');
-
-                    // Eliminar archivo anterior si existe
                     if (req.body.old_metadata) {
                         const oldPath = req.body.old_metadata.startsWith('/')
                             ? req.body.old_metadata
@@ -234,7 +184,6 @@ exports.handleUpload = async (req, res) => {
                         }
                     }
                 } else {
-                    // En modo edición sin archivo nuevo, mantener el existente
                     metadata = req.body.existing_metadata || req.body.old_metadata || '';
                 }
                 break;
@@ -259,14 +208,12 @@ exports.handleUpload = async (req, res) => {
                     });
                 }
 
-                // Manejar video local
                 if (videoFileUploaded) {
                     const fullPath = videoFileUploaded.path;
                     const relativePath = fullPath.match(/\/multimedia\/.*/)?.[0] || fullPath.replace(/.*[\/\\]multimedia[\/\\]/, '/multimedia/');
                     videoFile = relativePath.replace(/\\/g, '/');
                     metadata = videoFile;
 
-                    // Eliminar video anterior si existe
                     if (isEdit && req.body.old_metadata) {
                         const oldPath = req.body.old_metadata.startsWith('/')
                             ? req.body.old_metadata
@@ -280,10 +227,8 @@ exports.handleUpload = async (req, res) => {
                         }
                     }
                 }
-                // Manejar video de YouTube
                 else if (videoUrlProvided) {
                     let videoURL = videoUrlProvided;
-                    // Normalizar URL de YouTube
                     if (videoURL.includes('/embed/')) {
                         const videoId = videoURL.split('/embed/')[1].split('?')[0];
                         videoURL = `https://www.youtube.com/watch?v=${videoId}`;
@@ -293,13 +238,10 @@ exports.handleUpload = async (req, res) => {
                     }
                     metadata = videoURL;
                 }
-                // En modo edición sin cambios en el video
                 else if (isEdit) {
-                    // Mantener el video existente
                     metadata = req.body.existing_metadata || req.body.old_metadata || '';
                 }
 
-                // --- Lógica para la miniatura ---
                 const imageFile = req.files?.image?.[0];
                 const removeOldThumbnail = () => {
                     if (isEdit && req.body.old_icon && !req.body.old_icon.includes('i.ytimg.com')) {
@@ -317,26 +259,21 @@ exports.handleUpload = async (req, res) => {
                 };
 
                 if (imageFile) {
-                    // Nueva miniatura subida
                     const fullPath = imageFile.path;
                     const relativePath = fullPath.match(/\/multimedia\/.*/)?.[0] || fullPath.replace(/.*[\/\\]multimedia[\/\\]/, '/multimedia/');
                     iconPath = relativePath.replace(/\\/g, '/');
                     removeOldThumbnail();
                 } else if (req.body.image) {
-                    // Miniatura como string (URL de YouTube o ruta relativa)
                     const imageValue = req.body.image;
                     if (imageValue.includes('i.ytimg.com')) {
-                        // URL de YouTube, mantenerla
                         iconPath = imageValue;
                         if (isEdit) {
                             removeOldThumbnail();
                         }
                     } else {
-                        // Ruta relativa del servidor
                         iconPath = imageValue.startsWith('/') ? imageValue : '/' + imageValue;
                     }
                 } else if (isEdit && req.body.old_icon) {
-                    // Mantener miniatura existente en modo edición
                     iconPath = req.body.old_icon;
                 } else {
                     return res.status(400).json({
@@ -431,8 +368,6 @@ exports.handleUpload = async (req, res) => {
         });
     }
 };
-
-
 
 exports.uploadFile = uploadFile;
 exports.handleFormData = handleFormData;
