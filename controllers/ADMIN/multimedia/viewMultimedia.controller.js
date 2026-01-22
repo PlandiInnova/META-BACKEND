@@ -56,3 +56,66 @@ exports.getMultimedia = async (req, res) => {
         });
     }
 };
+
+exports.statusMultimedia = async (req, res) => {
+    try {
+        const id_multimedia = parseInt(req.query.id);
+        const status = parseInt(req.query.status);
+
+        if (isNaN(id_multimedia) || isNaN(status)) {
+            return res.status(400).json({ error: 'Parámetros inválidos' });
+        }
+        if (isNaN(status)) {
+            return res.status(400).json({ error: 'Parámetro status inválido' });
+        }
+
+        req.db.query(
+            'UPDATE MET_MULTIMEDIA SET MUL_STATUS = ? WHERE MUL_ID = ?',
+            [status, id_multimedia],
+            (error) => {
+                if (error) {
+                    console.error('Error en la consulta:', error);
+                    return res.status(500).json({ error: 'Error en la base de datos' });
+                }
+                res.json({ success: true, message: 'Estado actualizado correctamente' });
+            }
+        );
+
+    } catch (error) {
+        console.error('Error en getMultimedia:', error);
+        res.status(500).json({
+            error: 'Error al obtener multimedia',
+            detalle: error.message
+        });
+    }
+};
+
+exports.infoMultimedia = async (req, res) => {
+    try {
+        const id_multimedia = parseInt(req.query.id);
+
+        if (isNaN(id_multimedia)) {
+            return res.status(400).json({ error: 'Parámetro id inválido' });
+        }
+
+        req.db.query(
+            'Call infoMultimedia(?)',
+            [id_multimedia],
+            (error, results) => {
+                if (error) {
+                    console.error('Error en la consulta:', error);
+                    return res.status(500).json({ error: 'Error en la base de datos' });
+                }
+                res.json(results[0]);
+            }
+        );
+    }
+    catch (error) {
+        console.error('Error en infoMultimedia:', error);
+        res.status(500).json({
+            error: 'Error al obtener información de multimedia',
+            detalle: error.message
+        });
+    }
+}
+

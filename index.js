@@ -66,9 +66,18 @@ server.on('error', (error) => {
 });
 
 server.on('clientError', (error, socket) => {
+    // Ignorar errores de conexión abortada (ECONNABORTED, ECONNRESET) - son comunes cuando el cliente cierra la conexión
+    if (error.code === 'ECONNABORTED' || error.code === 'ECONNRESET' || error.message === 'write ECONNABORTED') {
+        // Estos errores son normales cuando el cliente cierra la conexión antes de que termine la respuesta
+        // No son críticos si la respuesta ya se envió correctamente
+        return;
+    }
+    
+    // Solo registrar errores realmente importantes
     console.error('========================================');
     console.error('[ERROR EN CLIENTE HTTP]');
     console.error(`Fecha: ${new Date().toISOString()}`);
+    console.error(`Código: ${error.code || 'N/A'}`);
     console.error(`Mensaje: ${error.message}`);
     console.error('========================================');
     if (!socket.destroyed) {

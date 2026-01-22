@@ -10,8 +10,12 @@ module.exports = () => {
     router.get('/filter-subsistemas', filtros.getSubsystemFilter);
     router.get('/filter-semestres', filtros.getSemesterFilter);
     router.get('/filter-materias', filtros.getMateriaFilter);
-
     router.get('/multimedia', viewController.getMultimedia);
+
+    router.get('/update-status', viewController.statusMultimedia);
+    router.get('/info-multimedia', viewController.infoMultimedia);
+
+    router.delete('/delete-multimedia', uploadController.handleDelete)
 
 
     router.post('/upload',
