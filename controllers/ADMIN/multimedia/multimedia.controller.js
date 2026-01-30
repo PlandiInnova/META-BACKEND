@@ -1,9 +1,13 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config();
 
 // Ruta base para guardar archivos
-const BASE_UPLOAD_PATH = '/var/www/html';
+// En desarrollo: ruta relativa, en producción: ruta absoluta desde .env
+const BASE_UPLOAD_PATH = process.env.NODE_ENV === 'production' 
+    ? (process.env.UPLOAD_BASE_PATH || '/var/www/html')
+    : path.resolve(__dirname, '../../../../var/www/html');
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {

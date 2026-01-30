@@ -168,7 +168,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(apiLimiter);
 
-const folderPath = '/var/www/html';
+// Ruta base para servir archivos estáticos
+// En desarrollo: ruta relativa, en producción: ruta absoluta desde .env
+const folderPath = process.env.NODE_ENV === 'production'
+    ? (process.env.UPLOAD_BASE_PATH || '/var/www/html')
+    : path.resolve(__dirname, '../var/www/html');
 console.log(`[INFO] Intentando servir archivos desde: ${folderPath}`);
 
 if (fs.existsSync(folderPath)) {
