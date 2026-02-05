@@ -65,17 +65,14 @@ exports.statusMultimedia = async (req, res) => {
         if (isNaN(id_multimedia) || isNaN(status)) {
             return res.status(400).json({ error: 'Parámetros inválidos' });
         }
-        if (isNaN(status)) {
-            return res.status(400).json({ error: 'Parámetro status inválido' });
-        }
 
         req.db.query(
-            'UPDATE MET_MULTIMEDIA SET MUL_STATUS = ? WHERE MUL_ID = ?',
+            'CALL ActualizarStatusMultimedia(?, ?)',
             [status, id_multimedia],
             (error) => {
                 if (error) {
                     console.error('Error en la consulta:', error);
-                    return res.status(500).json({ error: 'Error en la base de datos' });
+                    return res.status(500).json({ error: 'Error en la base de datos', detalle: error.message });
                 }
                 res.json({ success: true, message: 'Estado actualizado correctamente' });
             }
@@ -99,12 +96,12 @@ exports.infoMultimedia = async (req, res) => {
         }
 
         req.db.query(
-            'Call infoMultimedia(?)',
+            'CALL infoMultimedia(?)',
             [id_multimedia],
             (error, results) => {
                 if (error) {
                     console.error('Error en la consulta:', error);
-                    return res.status(500).json({ error: 'Error en la base de datos' });
+                    return res.status(500).json({ error: 'Error en la base de datos', detalle: error.message });
                 }
                 res.json(results[0]);
             }

@@ -1,12 +1,12 @@
 exports.getSubsystemFilter = async (req, res) => {
     try {
-        req.db.query('SELECT * FROM MET_SUBSISTEMA',
+        req.db.query('CALL ObtenerSubsistemas()',
             (error, results) => {
                 if (error) {
                     console.error('Error en la consulta:', error);
-                    return res.status(500).json({ error: 'Error en la base de datos' });
+                    return res.status(500).json({ error: 'Error en la base de datos', detalle: error.message });
                 }
-                res.json(results);
+                res.json(results[0]);
             }
         );
     } catch (error) {
@@ -22,13 +22,17 @@ exports.getSemesterFilter = async (req, res) => {
     try {
         const id_subsistema = req.query.subsistema;
 
-        req.db.query('SELECT * FROM MET_SEMESTRE WHERE SEM_SUB_ID = ?;', [id_subsistema],
+        if (!id_subsistema) {
+            return res.status(400).json({ error: 'Parámetro subsistema requerido' });
+        }
+
+        req.db.query('CALL ObtenerSemestresPorSubsistema(?)', [id_subsistema],
             (error, results) => {
                 if (error) {
                     console.error('Error en la consulta:', error);
-                    return res.status(500).json({ error: 'Error en la base de datos' });
+                    return res.status(500).json({ error: 'Error en la base de datos', detalle: error.message });
                 }
-                res.json(results);
+                res.json(results[0]);
             }
         );
 
@@ -45,13 +49,17 @@ exports.getMateriaFilter = async (req, res) => {
     try {
         const id_semestre = req.query.semestre;
 
-        req.db.query('SELECT * FROM MET_MATERIA WHERE MAT_SEM_ID = ?;', [id_semestre],
+        if (!id_semestre) {
+            return res.status(400).json({ error: 'Parámetro semestre requerido' });
+        }
+
+        req.db.query('CALL ObtenerMateriasPorSemestre(?)', [id_semestre],
             (error, results) => {
                 if (error) {
                     console.error('Error en la consulta:', error);
-                    return res.status(500).json({ error: 'Error en la base de datos' });
+                    return res.status(500).json({ error: 'Error en la base de datos', detalle: error.message });
                 }
-                res.json(results);
+                res.json(results[0]);
             }
         );
 

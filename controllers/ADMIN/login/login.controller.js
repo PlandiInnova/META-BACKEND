@@ -13,7 +13,7 @@ exports.login = async (req, res) => {
         }
 
         req.db.query(
-            'SELECT USU_ID, USU_USUARIO, USU_STATUS FROM MET_USUARIO_ADMIN WHERE USU_USUARIO = ? AND USU_PASSWORD = ? AND USU_STATUS = 1',
+            'CALL ValidarUsuarioAdmin(?, ?)',
             [username, password],
             (error, results) => {
                 if (error) {
@@ -25,7 +25,8 @@ exports.login = async (req, res) => {
                     });
                 }
 
-                if (!results || results.length === 0) {
+                const rows = results[0];
+                if (!rows || rows.length === 0) {
                     return res.status(401).json({
                         success: false,
                         status: 'NOT_FOUND',
@@ -33,7 +34,7 @@ exports.login = async (req, res) => {
                     });
                 }
 
-                const userData = results[0];
+                const userData = rows[0];
                 const usernameFromDb = userData.USU_USUARIO;
 
                 const JWT_SECRET = process.env.JWT_SECRET || 'tu-secret-key-cambiar-en-produccion';

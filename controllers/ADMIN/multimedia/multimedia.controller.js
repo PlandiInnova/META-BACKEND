@@ -182,15 +182,18 @@ exports.handleUpload = async (req, res) => {
                     if (isEdit) {
                         const existingAudio = await new Promise((resolve, reject) => {
                             req.db.query(
-                                'SELECT MUL_ENLACE FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                                'CALL ObtenerEnlaceMultimedia(?)',
                                 [multimediaId],
                                 (error, results) => {
                                     if (error) reject(error);
-                                    else resolve(results[0]?.MUL_ENLACE || '');
+                                    else {
+                                        const row = results[0] && results[0][0];
+                                        resolve(row ? (row.MUL_ENLACE || '') : '');
+                                    }
                                 }
                             );
                         });
-                        
+
                         if (existingAudio && existingAudio !== metadata) {
                             normalizeAndDeleteOldFile(existingAudio, baseDir);
                         }
@@ -199,11 +202,14 @@ exports.handleUpload = async (req, res) => {
                     if (isEdit) {
                         const existingAudio = await new Promise((resolve, reject) => {
                             req.db.query(
-                                'SELECT MUL_ENLACE FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                                'CALL ObtenerEnlaceMultimedia(?)',
                                 [multimediaId],
                                 (error, results) => {
                                     if (error) reject(error);
-                                    else resolve(results[0]?.MUL_ENLACE || '');
+                                    else {
+                                        const row = results[0] && results[0][0];
+                                        resolve(row ? (row.MUL_ENLACE || '') : '');
+                                    }
                                 }
                             );
                         });
@@ -239,12 +245,13 @@ exports.handleUpload = async (req, res) => {
                 if (isEdit) {
                     const currentVideo = await new Promise((resolve, reject) => {
                         req.db.query(
-                            'SELECT MUL_ENLACE FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                            'CALL ObtenerEnlaceMultimedia(?)',
                             [multimediaId],
                             (error, results) => {
                                 if (error) reject(error);
                                 else {
-                                    const videoPath = results[0]?.MUL_ENLACE || '';
+                                    const row = results[0] && results[0][0];
+                                    const videoPath = row ? (row.MUL_ENLACE || '') : '';
                                     if (videoPath && !videoPath.includes('youtube.com') && !videoPath.includes('youtu.be')) {
                                         resolve(extractRelativePath(videoPath));
                                     } else {
@@ -303,12 +310,13 @@ exports.handleUpload = async (req, res) => {
                 if (isEdit) {
                     const currentIcon = await new Promise((resolve, reject) => {
                         req.db.query(
-                            'SELECT MUL_IMAGEN FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                            'CALL ObtenerImagenMultimedia(?)',
                             [multimediaId],
                             (error, results) => {
                                 if (error) reject(error);
                                 else {
-                                    const iconPath = results[0]?.MUL_IMAGEN || '';
+                                    const row = results[0] && results[0][0];
+                                    const iconPath = row ? (row.MUL_IMAGEN || '') : '';
                                     if (iconPath.includes('i.ytimg.com')) {
                                         resolve(iconPath);
                                     } else {
@@ -531,7 +539,7 @@ exports.handleUpload = async (req, res) => {
         if (isEdit) {
             dbResult = await new Promise((resolve, reject) => {
                 req.db.query(
-                    `UPDATE MET_MULTIMEDIA SET MUL_TITULO = ?, MUL_UNIDAD = ?, MUL_PROGRESION = ?, MUL_DESCRIPCION = ?, MUL_SBT_ID = ?, MUL_IMAGEN = ?, MUL_ENLACE = ?, MUL_FECHA_CREACION = ?, MUL_MAT_ID = ?, MUL_STATUS = ?, MUL_USU_ID = ? WHERE MUL_ID = ?`,
+                    'CALL ActualizarMultimedia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [
                         registro.titulo,
                         registro.unidad,
@@ -556,11 +564,11 @@ exports.handleUpload = async (req, res) => {
                     }
                 );
             });
-            
+
         } else {
             dbResult = await new Promise((resolve, reject) => {
                 req.db.query(
-                    `INSERT INTO MET_MULTIMEDIA (MUL_TITULO, MUL_UNIDAD, MUL_PROGRESION, MUL_DESCRIPCION, MUL_SBT_ID, MUL_IMAGEN, MUL_ENLACE, MUL_FECHA_CREACION, MUL_MAT_ID, MUL_STATUS, MUL_USU_ID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    'CALL InsertarMultimedia(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [
                         registro.titulo,
                         registro.unidad,
@@ -576,7 +584,10 @@ exports.handleUpload = async (req, res) => {
                     ],
                     (error, results) => {
                         if (error) reject(error);
-                        else resolve(results);
+                        else {
+                            const insertId = (results[0] && results[0][0] && results[0][0].insertId) ? results[0][0].insertId : null;
+                            resolve({ insertId });
+                        }
                     }
                 );
             });
@@ -714,11 +725,11 @@ exports.handleDelete = async (req, res) => {
 
         const multimediaInfo = await new Promise((resolve, reject) => {
             req.db.query(
-                'SELECT MUL_ENLACE, MUL_IMAGEN FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                'CALL ObtenerEnlaceEImagenMultimedia(?)',
                 [multimediaId],
                 (error, results) => {
                     if (error) reject(error);
-                    else resolve(results[0] || null);
+                    else resolve((results[0] && results[0][0]) || null);
                 }
             );
         });
@@ -795,27 +806,20 @@ exports.handleDelete = async (req, res) => {
         }
 
         // Eliminar registro de la base de datos
-        const deleteResult = await new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
             req.db.query(
-                'DELETE FROM MET_MULTIMEDIA WHERE MUL_ID = ?',
+                'CALL EliminarMultimedia(?)',
                 [multimediaId],
-                (error, results) => {
+                (error) => {
                     if (error) {
                         console.error('❌ Error eliminando registro de la base de datos:', error);
                         reject(error);
                     } else {
-                        resolve(results);
+                        resolve();
                     }
                 }
             );
         });
-
-        if (deleteResult.affectedRows === 0) {
-            return res.status(404).json({
-                error: 'Multimedia no encontrado',
-                detalle: 'El recurso no pudo ser eliminado de la base de datos'
-            });
-        }
 
         res.status(200).json({
             success: true,
