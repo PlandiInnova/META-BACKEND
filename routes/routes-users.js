@@ -5,7 +5,7 @@ const login = require('../controllers/WEB/login.controller');
 
 module.exports = () => {
     router.get('/test', media.getTest);
-    router.post('/getMultimediaByGr', media.getMultimediaByGr);
     router.post('/getAcces', login.getAcces);
+    router.post('/getMultimediaByMat', media.getMultimediaByMat);
     return router;
 }
