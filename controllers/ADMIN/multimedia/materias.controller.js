@@ -151,7 +151,21 @@ exports.vincularLicencia = async (req, res) => {
                 }
 
                 if (results.length === 0) {
-                    return res.status(404).json({ success: false, message: 'La licencia ingresada no existe' });
+                    // La licencia no existe, la creamos y la vinculamos a la materia
+                    const insertQuery = `INSERT INTO MET_LICENCIA (LIC_LICENCIA, LIC_MAT_ID, LIC_STATUS, LIC_FECHA_CREACION) VALUES (?, ?, 1, CURDATE())`;
+                    
+                    req.db.query(insertQuery, [LIC_LICENCIA, MAT_ID], (insertError, insertResult) => {
+                        if (insertError) {
+                            console.error('[LICENCIA] Error al crear licencia:', insertError);
+                            return res.status(500).json({ success: false, message: 'Error en la base de datos al crear licencia' });
+                        }
+
+                        return res.status(200).json({
+                            success: true,
+                            message: 'Licencia creada y vinculada correctamente'
+                        });
+                    });
+                    return;
                 }
 
                 const licencia = results[0];
