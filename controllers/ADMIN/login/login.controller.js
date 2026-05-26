@@ -35,6 +35,7 @@ exports.login = async (req, res) => {
                 }
 
                 const userData = rows[0];
+
                 const usernameFromDb = userData.USU_USUARIO;
 
                 const JWT_SECRET = process.env.JWT_SECRET || 'tu-secret-key-cambiar-en-produccion';
@@ -50,6 +51,7 @@ exports.login = async (req, res) => {
 
                 res.status(200).json({
                     token: token,
+                    id: userData.USU_ID,
                     username: usernameFromDb,
                     userType: 'admin'
                 });
