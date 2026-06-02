@@ -30,7 +30,7 @@ exports.getMultimediaByMat = (req, res) => {
         if (results[0] && results[0].length > 0) {
           res.status(200).json({ data: results[0] });
         } else {
-          res.status(500).json({ error: "No hay datos o la estructura del resultado es incorrecta /getMultimediaByMat", message: "La consulta no arrojo datos" });
+          res.status(200).json({ error: "No hay datos o la estructura del resultado es incorrecta /getMultimediaByMat", message: "La consulta no arrojo datos" });
         }
       }
     });
