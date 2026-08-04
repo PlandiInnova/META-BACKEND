@@ -10,6 +10,8 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+
+
 const socketHandler = require('./middlewares/sockets');
 
 // ============   ======== MANEJO GLOBAL DE ERRORES ====================
@@ -51,6 +53,8 @@ process.on('warning', (warning) => {
 
 const app = express();
 const server = http.createServer(app);
+
+app.set('trust proxy', 1);
 
 server.on('error', (error) => {
     console.error('========================================');
@@ -171,7 +175,7 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(apiLimiter);
+// app.use(apiLimiter);
 
 // Ruta base para servir archivos estáticos
 // En desarrollo: ruta relativa, en producción: ruta absoluta desde .env
