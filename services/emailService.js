@@ -23,12 +23,12 @@ const emailTemplates = {
     attachments: [
       {
         filename: "ok.png",
-        path: path.join(__dirname, "../controllers/web/template/ok.png"),
+        path: path.join(__dirname, "../controllers/WEB/template/ok.png"),
         cid: "ok",
       },
       {
         filename: "logoMeta.png",
-        path: path.join(__dirname, "../controllers/web/template/logoMeta.png"),
+        path: path.join(__dirname, "../controllers/WEB/template/logoMeta.png"),
         cid: "logoMeta",
       },
     ],
@@ -43,7 +43,7 @@ const emailTemplates = {
     attachments: [
       {
         filename: "unnamed.png",
-        path: path.join(__dirname, "../controllers/web/template/unnamed.png"),
+        path: path.join(__dirname, "../controllers/WEB/template/unnamed.png"),
         cid: "unnamed",
       },
     ],
@@ -55,7 +55,7 @@ const emailTemplates = {
     attachments: [
       {
         filename: "unnamed.png",
-        path: path.join(__dirname, "../controllers/web/template/unnamed.png"),
+        path: path.join(__dirname, "../controllers/WEB/template/unnamed.png"),
         cid: "unnamed",
       },
     ],
@@ -75,7 +75,7 @@ const sendEmail = async (type, email, data) => {
       throw new Error(`Tipo de correo no soportado: ${type}`);
     }
 
-    const templatePath = path.join(__dirname, "../controllers/web/template", templateConfig.template);
+    const templatePath = path.join(__dirname, "../controllers/WEB/template", templateConfig.template);
     const htmlTemplate = fs.readFileSync(templatePath, "utf8");
 
     const template = handlebars.compile(htmlTemplate);

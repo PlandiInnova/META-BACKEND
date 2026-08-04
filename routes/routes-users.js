@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const media = require('../controllers/web/media.controller');
-const login = require('../controllers/web/login.controller');
+const media = require('../controllers/WEB/media.controller');
+const login = require('../controllers/WEB/login.controller');
 
 module.exports = () => {
     router.get('/test', media.getTest);
