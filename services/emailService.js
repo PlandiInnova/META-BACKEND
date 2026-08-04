@@ -18,13 +18,18 @@ const transporter = nodemailer.createTransport({
 
 const emailTemplates = {
   forgotPassword: {
-    subject: `Recuperación de contraseña - ${process.env.APP_NAME}`,
+    subject: `Recuperación de contraseña Meta`,
     template: "recupera.html",
     attachments: [
       {
-        filename: "unnamed.png",
-        path: path.join(__dirname, "../controllers/web/template/unnamed.png"),
-        cid: "unnamed",
+        filename: "ok.png",
+        path: path.join(__dirname, "../controllers/web/template/ok.png"),
+        cid: "ok",
+      },
+      {
+        filename: "logoMeta.png",
+        path: path.join(__dirname, "../controllers/web/template/logoMeta.png"),
+        cid: "logoMeta",
       },
     ],
     dataMapping: (data) => ({
@@ -33,7 +38,7 @@ const emailTemplates = {
     }),
   },
   changePassword: {
-    subject: `Recuperación de contraseña - ${process.env.APP_NAME}`,
+    subject: `Recuperación de contraseña Meta`,
     template: "recupera.html",
     attachments: [
       {
@@ -59,6 +64,44 @@ const emailTemplates = {
       contraseña: data.password,
     }),
   },
+};
+
+const sendEmail = async (type, email, data) => {
+  console.log(`[emailService] Iniciando envío tipo="${type}" to="${email}" data=`, JSON.stringify(data));
+  try {
+    const templateConfig = emailTemplates[type];
+
+    if (!templateConfig) {
+      throw new Error(`Tipo de correo no soportado: ${type}`);
+    }
+
+    const templatePath = path.join(__dirname, "../controllers/web/template", templateConfig.template);
+    const htmlTemplate = fs.readFileSync(templatePath, "utf8");
+
+    const template = handlebars.compile(htmlTemplate);
+    const templateData = templateConfig.dataMapping(data.access);
+    const htmlContent = template(templateData);
+
+    const mailOptions = {
+      from: `Soporte ${process.env.APP_NAME} <${process.env.SUPPORT_EMAIL}>`,
+      to: email,
+      subject: templateConfig.subject,
+      html: htmlContent,
+      attachments: templateConfig.attachments,
+    };
+
+    console.log(`[emailService] Enviando a "${email}" con subject="${templateConfig.subject}"`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[emailService] Correo enviado OK messageId=${info.messageId}`);
+    return {
+      success: true,
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    console.error(`[emailService] Error tipo="${type}":`, error.message);
+    console.error(`[emailService] Stack:`, error.stack);
+    throw error;
+  }
 };
 
 const sendEmailSupport = async (nombre, correo, mensaje) => {
@@ -128,5 +171,6 @@ const sendEmailSupport = async (nombre, correo, mensaje) => {
 };
 
 module.exports = {
+  sendEmail,
   sendEmailSupport,
 };
