@@ -16,19 +16,35 @@ const crypto = require('crypto');
 const TIPOS_LICENCIA = ['ESTUDIANTE', 'DOCENTE', 'GENERICA', 'INVITADO'];
 
 /**
- * Alfabeto de la parte aleatoria del código.
+ * Alfabeto de la parte variable del código.
  * Se omiten I, O, 0 y 1 a propósito: son los que la gente confunde al dictar
  * o teclear una licencia, y una licencia mal copiada es una llamada de soporte.
  */
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/**
+ * Formato del código: INDICIO-XXXX-XXXX.
+ *
+ * Todo lo que va después del indicio es aleatorio; el guion solo parte la tira en
+ * dos bloques para que se pueda dictar por teléfono sin perder el lugar a media
+ * lectura. Estos son los caracteres que se apartan para el bloque final.
+ */
+const LARGO_BLOQUE_FINAL = 4;
 
 // Longitudes reales de las columnas
 const MAX_LARGO_LICENCIA = 100;   // LIC_LICENCIA varchar(100)
 const MAX_LARGO_INDICIO = 100;    // LIC_INDICIO varchar(100)
 const MAX_LARGO_SOLICITANTE = 100; // PDD_SOLICITANTE varchar(100)
 
-// Topes de la generación
-const MIN_CARACTERES = 4;
+/**
+ * Topes de la generación.
+ *
+ * LIC_NUM_CARACTERES cuenta el total de la parte variable: si se piden 8, el
+ * código sale como INDICIO-XXXX-XXXX. El mínimo es 8 para que los dos bloques
+ * queden de cuatro o más; por debajo de eso el segundo bloque se comería casi
+ * todo el código y partirlo dejaría de tener sentido.
+ */
+const MIN_CARACTERES = 8;
 const MAX_CARACTERES = 32;
 const MAX_POR_LOTE = 300000;
 
@@ -98,7 +114,42 @@ function query(db, sql, params = []) {
 // ==========================================================================
 
 /**
- * Cuántas combinaciones distintas existen con este alfabeto y esta longitud.
+ * El prefijo del código. Si el indicio ya viene con guion al final no se le
+ * agrega otro.
+ *
+ * @param {string} indicio
+ * @returns {string}
+ */
+function prefijoDe(indicio) {
+    return indicio.endsWith('-') ? indicio : `${indicio}-`;
+}
+
+/**
+ * Cuántos caracteres le tocan al primer bloque: el total menos los que se
+ * apartan para el bloque final.
+ *
+ * @param {number} caracteres
+ * @returns {number}
+ */
+function largoPrimerBloque(caracteres) {
+    return caracteres - LARGO_BLOQUE_FINAL;
+}
+
+/**
+ * Largo del código completo: prefijo + los dos bloques + el guion que los parte.
+ * Con indicio META y 10 caracteres da 16, el largo de META-XXXXXX-XXXX.
+ *
+ * @param {string} indicio
+ * @param {number} caracteres
+ * @returns {number}
+ */
+function largoDelCodigo(indicio, caracteres) {
+    return prefijoDe(indicio).length + caracteres + 1;
+}
+
+/**
+ * Cuántas combinaciones distintas existen con esta longitud total. El guion no
+ * suma nada: solo parte en dos una tira que es aleatoria de principio a fin.
  * Se usa BigInt: con 13 caracteres ya se supera el entero seguro de JavaScript
  * y el cálculo daría un número redondeado que no sirve para comparar.
  *
@@ -127,7 +178,8 @@ function caracteresNecesarios(cantidad, yaUsados) {
 }
 
 /**
- * Genera códigos aleatorios en bloque.
+ * Genera en bloque la parte variable del código: la tira aleatoria ya partida en
+ * dos por el guion. Con 10 caracteres sale `XXXXXX-XXXX`.
  *
  * Pide todos los bytes de una sola vez en lugar de llamar al generador por cada
  * carácter: con 300 000 licencias de 10 caracteres serían 3 millones de llamadas
@@ -137,19 +189,23 @@ function caracteresNecesarios(cantidad, yaUsados) {
  * resto de cada byte reparte por igual y no introduce sesgo.
  *
  * @param {number} cuantos
- * @param {number} caracteres
+ * @param {number} caracteres Total de la parte variable, los dos bloques juntos
  * @returns {string[]}
  */
 function bloqueDeCadenas(cuantos, caracteres) {
+    const corte = largoPrimerBloque(caracteres);
     const bytes = crypto.randomBytes(cuantos * caracteres);
     const salida = new Array(cuantos);
     let pos = 0;
 
     for (let i = 0; i < cuantos; i++) {
         let cadena = '';
+
         for (let c = 0; c < caracteres; c++) {
-            cadena += ALFABETO[bytes[pos++] % 32];
+            if (c === corte) cadena += '-';
+            cadena += ALFABETO[bytes[pos++] % ALFABETO.length];
         }
+
         salida[i] = cadena;
     }
 
@@ -174,9 +230,8 @@ function bloqueDeCadenas(cuantos, caracteres) {
  * @returns {Promise<{codigos: string[], yaExistian: number, pasadas: number}>}
  */
 async function generarCodigosUnicos(db, indicio, caracteres, cantidad) {
-    const separador = indicio.endsWith('-') ? '' : '-';
-    const prefijo = `${indicio}${separador}`;
-    const largoTotal = prefijo.length + caracteres;
+    const prefijo = prefijoDe(indicio);
+    const largoTotal = largoDelCodigo(indicio, caracteres);
 
     // Capa 2: lo ya emitido con este mismo prefijo y largo
     const previos = await query(
@@ -306,7 +361,7 @@ function validarGeneracion(body) {
 
     // El código completo tiene que caber en la columna
     if (datos.LIC_INDICIO && datos.LIC_NUM_CARACTERES) {
-        const largoTotal = datos.LIC_INDICIO.length + 1 + datos.LIC_NUM_CARACTERES;
+        const largoTotal = largoDelCodigo(datos.LIC_INDICIO, datos.LIC_NUM_CARACTERES);
         if (largoTotal > MAX_LARGO_LICENCIA) {
             errores.push(
                 `El código quedaría de ${largoTotal} caracteres y el máximo es ${MAX_LARGO_LICENCIA}. ` +
@@ -362,7 +417,8 @@ exports.getCatalogosLicencia = (req, res) => {
             min_caracteres: MIN_CARACTERES,
             max_caracteres: MAX_CARACTERES,
             max_por_lote: MAX_POR_LOTE,
-            max_largo_licencia: MAX_LARGO_LICENCIA
+            max_largo_licencia: MAX_LARGO_LICENCIA,
+            largo_bloque_final: LARGO_BLOQUE_FINAL
         }
     });
 };
@@ -406,9 +462,8 @@ exports.generarLicencias = async (req, res) => {
         // ---- ¿Alcanzan las combinaciones? ----
         // Se compara contra lo ya emitido con el mismo prefijo y largo, que es lo
         // único que reduce el espacio disponible de verdad.
-        const separador = datos.LIC_INDICIO.endsWith('-') ? '' : '-';
-        const prefijo = `${datos.LIC_INDICIO}${separador}`;
-        const largoCodigo = prefijo.length + datos.LIC_NUM_CARACTERES;
+        const prefijo = prefijoDe(datos.LIC_INDICIO);
+        const largoCodigo = largoDelCodigo(datos.LIC_INDICIO, datos.LIC_NUM_CARACTERES);
 
         const usadosFila = await query(
             req.db,

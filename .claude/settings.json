@@ -56,7 +56,9 @@
       "Bash(node test-ventas.js)",
       "PowerShell($c = Get-NetTCPConnection -LocalPort 3999 -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { $c | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; Start-Sleep -Seconds 2; Write-Output \"servidor reiniciable\")",
       "Bash(node test-filtro-tipo.js)",
-      "Bash(node test-paquetes.js)"
+      "Bash(node test-paquetes.js)",
+      "Bash(node \"C:/Users/PLANDI/AppData/Local/Temp/claude/d--Desktop-Proyectos-2025-META-BACKEND/4bf050d5-ef81-46fc-aa7e-2c08c5416bca/scratchpad/prueba-formato.js\")",
+      "Bash(npx tsc *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\PLANDI\\AppData\\Local\\Temp\\claude\\d--Desktop-Proyectos-2025-META-BACKEND\\61cb2888-0e5f-49f9-82a7-098766b42a75\\scratchpad"
