@@ -138,6 +138,9 @@ const apiLimiter = rateLimit({
     max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
+    // La subida de productos manda una petición por cada trozo del archivo:
+    // un archivo de varios GB supera por sí solo el límite, así que queda exento.
+    skip: (req) => /^\/mapa\/v1\/admin\/productos(\/|$)/.test(req.originalUrl || req.url),
     message: {
         status: 429,
         message: 'Demasiadas solicitudes, por favor intente más tarde'
