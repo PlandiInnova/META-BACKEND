@@ -54,14 +54,20 @@ const emailTemplates = {
     template: "register.html",
     attachments: [
       {
-        filename: "unnamed.png",
-        path: path.join(__dirname, "../controllers/WEB/template/unnamed.png"),
-        cid: "unnamed",
+        filename: "ok.png",
+        path: path.join(__dirname, "../controllers/WEB/template/ok.png"),
+        cid: "ok",
+      },
+      {
+        filename: "logoMeta.png",
+        path: path.join(__dirname, "../controllers/WEB/template/logoMeta.png"),
+        cid: "logoMeta",
       },
     ],
     dataMapping: (data) => ({
-      usuario: data.name,
-      contraseña: data.password,
+      name: data.name,
+      usuario: data.usuario,
+      password: data.password,
     }),
   },
 };
@@ -83,7 +89,7 @@ const sendEmail = async (type, email, data) => {
     const htmlContent = template(templateData);
 
     const mailOptions = {
-      from: `Soporte ${process.env.APP_NAME} <${process.env.SUPPORT_EMAIL}>`,
+      from: `Soporte sistema Meta Holox <${process.env.SUPPORT_EMAIL}>`,
       to: email,
       subject: templateConfig.subject,
       html: htmlContent,
@@ -107,9 +113,9 @@ const sendEmail = async (type, email, data) => {
 const sendEmailSupport = async (nombre, correo, mensaje) => {
   const now = new Date();
   const formato = now.toLocaleDateString('es-ES', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
   }).replace(' de ', ' ').replace(' de ', ', ');
   try {
     const mailOptions = {

@@ -1,4 +1,5 @@
 const path = require("path");
+const { sendEmail } = require("../../services/emailService");
 
 
 exports.getAcces = (req, res) => {
@@ -81,7 +82,7 @@ exports.getRegistroUsuario = (req, res) => {
       });
     }
     const query = `call AM_spRegistrarUsuario(?, ?, ?, ?, ?, ?, ?, ?)`;
-    req.db.query(query, [usuario, password, nombre, apellido1, apellido2, telefono, email, licencia], (error, results) => {
+    req.db.query(query, [usuario, password, nombre, apellido1, apellido2, telefono, email, licencia], async (error, results) => {
       if (error) {
         if (error.sqlMessage) {
           res.status(500).json({ error: "Error en la consulta a la base de datos /getRegistroUsuario", message: error.sqlMessage });
@@ -90,7 +91,21 @@ exports.getRegistroUsuario = (req, res) => {
         }
       } else {
         if (results[0] && results[0].length > 0) {
+          const RESPONSE = results[0][0] ? results[0][0].RESPONSE : undefined;
           res.status(200).json({ data: results[0] });
+          if (RESPONSE === "1" || RESPONSE === 1) {
+            try {
+              const access = {
+                name: nombre,
+                usuario: usuario,
+                password: password,
+              };
+              await sendEmail("register", email, { access });
+              console.log("Correo creedenciales correctamente");
+            } catch (emailError) {
+              console.error("Error enviando correo credenciales:", emailError);
+            }
+          }
         } else {
           res.status(200).json({ error: "No hay datos o la estructura del resultado es incorrecta /getRegistroUsuario", message: "La consulta no arrojo datos" });
         }
