@@ -20,6 +20,8 @@ module.exports = () => {
     router.get('/filter-materias', filtros.getMateriaFilter);
     router.get('/materias', materiasController.getMaterias);
     router.post('/materias', materiasController.createMateria);
+    router.put('/materias/:id', materiasController.updateMateria);
+    router.delete('/materias/:id', materiasController.deleteMateria);
     router.post('/materias/vincular-licencia', materiasController.vincularLicencia);
     router.post('/materias/desvincular-licencia', materiasController.desvincularLicencia);
     router.get('/filter-subtipos', filtros.getSubtiposFilter);

@@ -58,7 +58,8 @@
       "Bash(node test-filtro-tipo.js)",
       "Bash(node test-paquetes.js)",
       "Bash(node \"C:/Users/PLANDI/AppData/Local/Temp/claude/d--Desktop-Proyectos-2025-META-BACKEND/4bf050d5-ef81-46fc-aa7e-2c08c5416bca/scratchpad/prueba-formato.js\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(cd d:/Desktop/Proyectos_2025 && echo \"=== limites y constantes del backend ===\" && grep -nE \"^const \\(MAX|MIN|BASE|PRODUCTOS_|UPLOADS_|FILAS_|ENSAMBLANDO|LOTE_|ALFABETO\\)|MAX_FILE_SIZE|MAX_CHUNK_SIZE|MAX_IMAGEN\" META-BACKEND/controllers/ADMIN/productos/productos.paths.js META-BACKEND/controllers/ADMIN/productos/upload.controller.js | head -20 && echo \"\" && echo \"=== chunk del front ===\" && grep -nE \"CHUNK_SIZE|MAX_REINTENTOS|STORAGE_PREFIX\" META_GPS/src/app/services/productos.service.ts | head -6 && echo \"\" && echo \"=== endpoints de productos ===\" && grep -nE \"router\\\\.\\(get|post|put|delete\\)\\\\\\('/productos\" META-BACKEND/routes/routes-admin.js)"
     ],
     "additionalDirectories": [
       "C:\\Users\\PLANDI\\AppData\\Local\\Temp\\claude\\d--Desktop-Proyectos-2025-META-BACKEND\\61cb2888-0e5f-49f9-82a7-098766b42a75\\scratchpad"
