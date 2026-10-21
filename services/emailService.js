@@ -119,7 +119,7 @@ const sendEmailSupport = async (nombre, correo, mensaje) => {
   }).replace(' de ', ' ').replace(' de ', ', ');
   try {
     const mailOptions = {
-      from: `"META Support System" <${correo}>`, // El nombre del remitente y su correo
+      from: `"META Support System" <${process.env.SUPPORT_EMAIL}>`, // Remitente propio para que no lo marquen como spam
       to: "contacto@metabooks.com.mx",
       replyTo: correo, // This allows you to reply directly to the user
       subject: `Nuevo mensaje de soporte de ${nombre}`,
