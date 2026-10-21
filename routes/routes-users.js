@@ -6,7 +6,7 @@ const router = express.Router();
 const supportLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 3,
-    standardHeaders: true,
+    skipFailedRequests: true,
     legacyHeaders: false,
     message: {
         success: false,
