@@ -19,5 +19,6 @@ const launcher = require('../controllers/LAUNCHER/launcher.controller');
 module.exports = () => {
     router.post('/getConsultaVobookUsuario', launcher.getConsultaVobookUsuario);
     router.post('/getConsultaVoolanUsuario', launcher.getConsultaVoolanUsuario);
+    router.get('/generarZips', launcher.generarZips);
     return router;
 }
