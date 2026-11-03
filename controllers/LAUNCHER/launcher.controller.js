@@ -83,9 +83,6 @@ const obtenerRutaContenido = () =>
     process.env.CONTENIDO_LMS || "/var/www/html/CONTENIDO-CLEAR-LMS"
   );
 
-// Convierte TEM_RUTA en una ruta relativa a CONTENIDO-CLEAR-LMS.
-// Acepta rutas tipo "META/1-Semestre/...", "/CONTENIDO-CLEAR-LMS/META/..."
-// o URLs completas "https://dominio/CONTENIDO-CLEAR-LMS/META/...".
 const normalizarRutaRelativa = (ruta) => {
   let relativa = String(ruta || "").trim().replace(/\\/g, "/");
 
@@ -220,8 +217,14 @@ const crearZipBloque = async (bloque, temas, rutaZipsBase) => {
 
     zip.pipe(archivo);
 
+    // Dentro del ZIP se conserva la ruta completa desde CONTENIDO-CLEAR-LMS:
+    //   META/1-Semestre/<Materia>/<Bloque>/<Proposito>/...
     for (const carpeta of carpetasTemas) {
-      zip.directory(carpeta, path.basename(carpeta));
+      const rutaDentroZip = path
+        .relative(RUTA_CONTENIDO, carpeta)
+        .split(path.sep)
+        .join("/");
+      zip.directory(carpeta, rutaDentroZip);
     }
 
     zip.finalize().catch(reject);
