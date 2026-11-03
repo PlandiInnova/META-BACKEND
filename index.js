@@ -200,6 +200,9 @@ app.use('/mapa/v1/login/', dbMiddleware, login());
 const users = require('./routes/routes-users');
 app.use('/mapa/v1/users/', dbMiddleware, users());
 
+const launcher = require('./routes/routes-launcher');
+app.use('/mapa/v1/launcher/', dbMiddleware, launcher());
+
 const admin = require('./routes/routes-admin');
 app.use('/mapa/v1/admin/', dbMiddleware, admin());
 
