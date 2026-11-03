@@ -78,21 +78,41 @@ const limpiarNombre = (nombre) => {
     .replace(/[^a-zA-Z0-9_-]/g, "_");
 };
 
+const obtenerRutaContenido = () =>
+  path.resolve(
+    process.env.CONTENIDO_LMS || "/var/www/html/CONTENIDO-CLEAR-LMS"
+  );
+
+// Convierte TEM_RUTA en una ruta relativa a CONTENIDO-CLEAR-LMS.
+// Acepta rutas tipo "META/1-Semestre/...", "/CONTENIDO-CLEAR-LMS/META/..."
+// o URLs completas "https://dominio/CONTENIDO-CLEAR-LMS/META/...".
+const normalizarRutaRelativa = (ruta) => {
+  let relativa = String(ruta || "").trim().replace(/\\/g, "/");
+
+  relativa = relativa.replace(/^[a-z]+:\/\/[^/]+/i, ""); // quita protocolo y dominio
+  relativa = relativa.split(/[?#]/)[0];
+  try { relativa = decodeURIComponent(relativa); } catch (_) {}
+
+  const marcador = "CONTENIDO-CLEAR-LMS/";
+  const idx = relativa.indexOf(marcador);
+  if (idx !== -1) relativa = relativa.slice(idx + marcador.length);
+
+  return relativa.replace(/^\/+/, "").replace(/\/+$/, "");
+};
+
 const resolverRutaTema = (ruta) => {
-  const RUTA_CONTENIDO = path.resolve(
-  process.env.CONTENIDO_LMS ||
-  path.join(process.cwd(), "CONTENIDO-CLEAR-LMS")
-);
+  const RUTA_CONTENIDO = obtenerRutaContenido();
+  const relativa = normalizarRutaRelativa(ruta);
 
-
-  const relativa = String(ruta || "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "");
+  if (!relativa) {
+    throw new Error("El tema no tiene ruta (TEM_RUTA vacía)");
+  }
 
   const rutaCompleta = path.resolve(RUTA_CONTENIDO, relativa);
   const relativaFinal = path.relative(RUTA_CONTENIDO, rutaCompleta);
 
   if (
+    !relativaFinal ||
     relativaFinal === ".." ||
     relativaFinal.startsWith(`..${path.sep}`) ||
     path.isAbsolute(relativaFinal)
@@ -103,101 +123,108 @@ const resolverRutaTema = (ruta) => {
   return rutaCompleta;
 };
 
-// Genera un ZIP con las carpetas de temas de un bloque.
-const crearZipBloque = (bloque, temas, carpetaDestino) => {
-  return new Promise(async (resolve, reject) => {
-   const nombreBloque =
-  `${bloque.BLQ_NUMERO}_${limpiarNombre(bloque.BLQ_NOMBRE)}`;
+// Genera un ZIP por bloque respetando la estructura de origen:
+//   CONTENIDO-CLEAR-LMS/META/1-Semestre/<Materia>/<Bloque>/<Proposito>
+//   -> CONTENIDO_ZIPS/META/1-Semestre/<Materia>/<N><NombreBloque>.zip
+const crearZipBloque = async (bloque, temas, rutaZipsBase) => {
+  const RUTA_CONTENIDO = obtenerRutaContenido();
+  const temasNoEncontrados = [];
+  const carpetasTemas = [];
 
-    const rutaZip = path.join(carpetaDestino, `${nombreBloque}.zip`);
+  // 1. Resolver y validar las carpetas de los temas
+  for (const tema of temas) {
+    try {
+      let rutaTema = resolverRutaTema(tema.TEM_RUTA);
 
+      if (!fs.existsSync(rutaTema)) {
+        temasNoEncontrados.push({
+          TEM_ID: tema.TEM_ID,
+          TEM_NOMBRE: tema.TEM_NOMBRE,
+          RUTA: tema.TEM_RUTA,
+          RUTA_BUSCADA: rutaTema
+        });
+        continue;
+      }
+
+      const estadisticas = await fs.promises.stat(rutaTema);
+
+      // Si TEM_RUTA apunta a un archivo (ej. index.html), usar su carpeta
+      if (!estadisticas.isDirectory()) {
+        rutaTema = path.dirname(rutaTema);
+      }
+
+      if (!carpetasTemas.includes(rutaTema)) {
+        carpetasTemas.push(rutaTema);
+      }
+    } catch (error) {
+      temasNoEncontrados.push({
+        TEM_ID: tema.TEM_ID,
+        TEM_NOMBRE: tema.TEM_NOMBRE,
+        RUTA: tema.TEM_RUTA,
+        ERROR: error.message
+      });
+    }
+  }
+
+  if (carpetasTemas.length === 0) {
+    return {
+      RESPONSE: "3",
+      BLOQUE_ID: bloque.BLQ_ID,
+      BLOQUE: bloque.BLQ_NOMBRE,
+      MENSAJE: "No se encontraron carpetas de temas para comprimir",
+      TEMAS_NO_ENCONTRADOS: temasNoEncontrados
+    };
+  }
+
+  // 2. Carpeta destino = carpeta de la materia (padre de la carpeta del bloque)
+  //    .../<Materia>/<Bloque>/<Proposito>  ->  .../<Materia>
+  const carpetaBloqueOrigen = path.dirname(carpetasTemas[0]);
+  const carpetaMateriaOrigen = path.dirname(carpetaBloqueOrigen);
+  const relativaMateria = path.relative(RUTA_CONTENIDO, carpetaMateriaOrigen);
+
+  if (!relativaMateria || relativaMateria.startsWith("..")) {
+    throw new Error(
+      `No se pudo determinar la carpeta de la materia a partir de ${carpetasTemas[0]}`
+    );
+  }
+
+  const carpetaDestino = path.join(rutaZipsBase, relativaMateria);
+  await fs.promises.mkdir(carpetaDestino, { recursive: true });
+
+  const nombreZip = `${bloque.BLQ_NUMERO}${limpiarNombre(bloque.BLQ_NOMBRE)}`;
+  const rutaZip = path.join(carpetaDestino, `${nombreZip}.zip`);
+
+  // 3. Crear el ZIP con las carpetas de los temas (Proposito1, Proposito2, ...)
+  return new Promise((resolve, reject) => {
     const archivo = fs.createWriteStream(rutaZip);
-    const zip = archiver("zip", {
-      zlib: { level: 9 }
-    });
-
-    let temasAgregados = 0;
-    const temasNoEncontrados = [];
+    const zip = archiver("zip", { zlib: { level: 9 } });
 
     archivo.on("close", () => {
       resolve({
         RESPONSE: "1",
         BLOQUE_ID: bloque.BLQ_ID,
         BLOQUE: bloque.BLQ_NOMBRE,
-        ZIP: nombreBloque,
+        ZIP: `${nombreZip}.zip`,
         RUTA: rutaZip,
         BYTES: zip.pointer(),
-        TEMAS_AGREGADOS: temasAgregados,
+        TEMAS_AGREGADOS: carpetasTemas.length,
         TEMAS_NO_ENCONTRADOS: temasNoEncontrados
       });
     });
 
     archivo.on("error", reject);
-    zip.on("error", reject);
+    zip.on("error", (error) => {
+      archivo.destroy();
+      reject(error);
+    });
 
     zip.pipe(archivo);
 
-    try {
-      for (const tema of temas) {
-        try {
-          const rutaTema = resolverRutaTema(tema.TEM_RUTA);
-
-          if (!fs.existsSync(rutaTema)) {
-            temasNoEncontrados.push({
-              TEM_ID: tema.TEM_ID,
-              TEM_NOMBRE: tema.TEM_NOMBRE,
-              RUTA: tema.TEM_RUTA
-            });
-            continue;
-          }
-
-          const estadisticas = await fs.promises.stat(rutaTema);
-
-          if (!estadisticas.isDirectory()) {
-            temasNoEncontrados.push({
-              TEM_ID: tema.TEM_ID,
-              TEM_NOMBRE: tema.TEM_NOMBRE,
-              RUTA: tema.TEM_RUTA,
-              ERROR: "La ruta no es una carpeta"
-            });
-            continue;
-          }
-
-          const nombreCarpeta =
-            `${tema.TEM_ID}_${limpiarNombre(tema.TEM_NOMBRE)}`;
-
-          zip.directory(rutaTema, nombreCarpeta);
-          temasAgregados++;
-
-        } catch (error) {
-          temasNoEncontrados.push({
-            TEM_ID: tema.TEM_ID,
-            TEM_NOMBRE: tema.TEM_NOMBRE,
-            ERROR: error.message
-          });
-        }
-      }
-
-      if (temasAgregados === 0) {
-        zip.abort();
-        archivo.destroy();
-        fs.promises.unlink(rutaZip).catch(() => {});
-        return resolve({
-          RESPONSE: "3",
-          BLOQUE_ID: bloque.BLQ_ID,
-          BLOQUE: bloque.BLQ_NOMBRE,
-          MENSAJE: "No se encontraron carpetas de temas para comprimir",
-          TEMAS_NO_ENCONTRADOS: temasNoEncontrados
-        });
-      }
-
-      await zip.finalize();
-
-    } catch (error) {
-      zip.abort();
-      archivo.destroy();
-      reject(error);
+    for (const carpeta of carpetasTemas) {
+      zip.directory(carpeta, path.basename(carpeta));
     }
+
+    zip.finalize().catch(reject);
   });
 };
 
