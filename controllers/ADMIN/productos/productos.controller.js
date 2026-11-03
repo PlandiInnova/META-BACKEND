@@ -41,6 +41,12 @@ const LIMITES = {
 const TIPOS_PRODUCTO = ['Recurso', 'Plataforma'];
 
 /**
+ * Solo las plataformas pertenecen a una materia (y con ella a un semestre y un
+ * subsistema). Un recurso es independiente y no lleva ninguno de los tres.
+ */
+const TIPO_CON_MATERIA = 'Plataforma';
+
+/**
  * Ejecuta una consulta devolviendo una promesa, manteniendo el pool de req.db.
  * @param {object} db
  * @param {string} sql
@@ -68,6 +74,8 @@ const SELECT_PRODUCTO = `
         p.PRO_TIPO,
         p.PRO_FILES,
         p.PRO_VERSION,
+        p.PRO_MAT_ID,
+        mat.MAT_NOMBRE,
         sem.SEM_NUMERO,
         sem.SEM_NOMBRE,
         sub.SUB_ID,
@@ -75,6 +83,7 @@ const SELECT_PRODUCTO = `
     FROM MET_PRODUCTOS p
     LEFT JOIN MET_SEMESTRE sem ON sem.SEM_ID = p.PRO_SEM_ID
     LEFT JOIN MET_SUBSISTEMA sub ON sub.SUB_ID = sem.SEM_SUB_ID
+    LEFT JOIN MET_MATERIA mat ON mat.MAT_ID = p.PRO_MAT_ID
 `;
 
 /**
@@ -86,6 +95,34 @@ const SELECT_PRODUCTO = `
 async function obtenerProducto(db, proId) {
     const results = await query(db, `${SELECT_PRODUCTO} WHERE p.PRO_ID = ?`, [proId]);
     return (results && results[0]) || null;
+}
+
+/**
+ * Comprueba que el semestre exista y que la materia exista y pertenezca a ese
+ * semestre. Sin esto se podría guardar un producto de primer semestre ligado a
+ * una materia de tercero.
+ *
+ * @param {object} db
+ * @param {number|null} semId
+ * @param {number|null} matId
+ * @returns {Promise<string|null>} el mensaje de error, o null si todo cuadra
+ */
+async function validarSemestreYMateria(db, semId, matId) {
+    if (semId) {
+        const semestre = await query(db, 'SELECT SEM_ID FROM MET_SEMESTRE WHERE SEM_ID = ?', [semId]);
+        if (!semestre || semestre.length === 0) return `El semestre ${semId} no existe`;
+    }
+
+    if (matId) {
+        const materia = await query(db, 'SELECT MAT_NOMBRE, MAT_SEM_ID FROM MET_MATERIA WHERE MAT_ID = ?', [matId]);
+        if (!materia || materia.length === 0) return `La materia ${matId} no existe`;
+
+        if (Number(materia[0].MAT_SEM_ID) !== Number(semId)) {
+            return `La materia «${materia[0].MAT_NOMBRE}» no pertenece al semestre seleccionado. Elige una materia de ese semestre.`;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -208,16 +245,26 @@ function validarCampos(body, esCreacion) {
     const descripcion = texto(body.PRO_DESCRIPCION);
     if (descripcion !== undefined) datos.PRO_DESCRIPCION = descripcion;
 
-    // El semestre es obligatorio al crear; al editar no puede vaciarse
-    if (body.PRO_SEM_ID !== undefined && body.PRO_SEM_ID !== null && body.PRO_SEM_ID !== '') {
-        const semId = Number(body.PRO_SEM_ID);
-        if (!Number.isInteger(semId) || semId <= 0) errores.push('PRO_SEM_ID debe ser un entero positivo');
-        else datos.PRO_SEM_ID = semId;
-    } else if (esCreacion) {
-        errores.push('El semestre es obligatorio');
-    } else if (body.PRO_SEM_ID === null || body.PRO_SEM_ID === '') {
-        errores.push('El semestre no puede quedar vacío');
-    }
+    // Semestre y materia: aquí solo se revisa el formato. Si son obligatorios
+    // depende del tipo de producto, y eso lo decide aplicarReglasPorTipo.
+    // undefined = no se envió; null = se envió vacío.
+    const idOpcional = (valor, campo) => {
+        if (valor === undefined) return undefined;
+        if (valor === null || valor === '') return null;
+
+        const id = Number(valor);
+        if (!Number.isInteger(id) || id <= 0) {
+            errores.push(`${campo} debe ser un entero positivo`);
+            return undefined;
+        }
+        return id;
+    };
+
+    const semId = idOpcional(body.PRO_SEM_ID, 'PRO_SEM_ID');
+    if (semId !== undefined) datos.PRO_SEM_ID = semId;
+
+    const matId = idOpcional(body.PRO_MAT_ID, 'PRO_MAT_ID');
+    if (matId !== undefined) datos.PRO_MAT_ID = matId;
 
     // El nombre del ejecutable es obligatorio al crear
     const exe = texto(body.PRO_EXE);
@@ -257,6 +304,33 @@ function validarCampos(body, esCreacion) {
     }
 
     return { errores, datos };
+}
+
+/**
+ * Semestre y materia según el tipo de producto:
+ *  - Plataforma: los dos son obligatorios.
+ *  - Recurso: no aplican, se guardan vacíos aunque el cliente los mande.
+ *
+ * Se evalúa sobre cómo queda el producto al final (lo que llega más lo que ya
+ * tenía), para que cambiar solo el tipo también aplique la regla.
+ *
+ * @param {object} datos campos ya validados; se modifica en sitio
+ * @param {object} actual el producto tal como está hoy ({} al crear)
+ * @returns {string[]} errores
+ */
+function aplicarReglasPorTipo(datos, actual = {}) {
+    const valorFinal = (campo) => (campo in datos ? datos[campo] : actual[campo]) ?? null;
+
+    if (valorFinal('PRO_TIPO') !== TIPO_CON_MATERIA) {
+        datos.PRO_SEM_ID = null;
+        datos.PRO_MAT_ID = null;
+        return [];
+    }
+
+    const errores = [];
+    if (!valorFinal('PRO_SEM_ID')) errores.push(`El semestre es obligatorio para productos de tipo ${TIPO_CON_MATERIA}`);
+    if (!valorFinal('PRO_MAT_ID')) errores.push(`La materia es obligatoria para productos de tipo ${TIPO_CON_MATERIA}`);
+    return errores;
 }
 
 /**
@@ -406,15 +480,14 @@ exports.createProducto = async (req, res) => {
 
     try {
         const { errores, datos } = validarCampos(req.body, true);
+        errores.push(...aplicarReglasPorTipo(datos));
         if (errores.length > 0) {
             return res.status(400).json({ success: false, message: 'Datos inválidos', errores });
         }
 
-        if (datos.PRO_SEM_ID) {
-            const semestre = await query(req.db, 'SELECT SEM_ID FROM MET_SEMESTRE WHERE SEM_ID = ?', [datos.PRO_SEM_ID]);
-            if (!semestre || semestre.length === 0) {
-                return res.status(400).json({ success: false, message: `El semestre ${datos.PRO_SEM_ID} no existe` });
-            }
+        const errorRelacion = await validarSemestreYMateria(req.db, datos.PRO_SEM_ID, datos.PRO_MAT_ID);
+        if (errorRelacion) {
+            return res.status(400).json({ success: false, message: errorRelacion });
         }
 
         // La carpeta se nombra a partir de PRO_NOMBRE, o de la carpeta indicada explícitamente
@@ -439,9 +512,9 @@ exports.createProducto = async (req, res) => {
 
         const insertQuery = `
             INSERT INTO MET_PRODUCTOS
-                (PRO_NOMBRE, PRO_NOMBRE_DETALLADO, PRO_DESCRIPCION, PRO_SEM_ID,
+                (PRO_NOMBRE, PRO_NOMBRE_DETALLADO, PRO_DESCRIPCION, PRO_SEM_ID, PRO_MAT_ID,
                  PRO_EXE, PRO_IMAGEN, PRO_TIPO, PRO_FILES, PRO_VERSION)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const valores = [
@@ -449,6 +522,7 @@ exports.createProducto = async (req, res) => {
             datos.PRO_NOMBRE_DETALLADO || null,
             datos.PRO_DESCRIPCION || null,
             datos.PRO_SEM_ID ?? null,
+            datos.PRO_MAT_ID ?? null,
             datos.PRO_EXE || null,
             null, // PRO_IMAGEN se define al subir la portada
             datos.PRO_TIPO || null,
@@ -507,14 +581,20 @@ exports.updateProducto = async (req, res) => {
         }
 
         const { errores, datos } = validarCampos(req.body, false);
+        errores.push(...aplicarReglasPorTipo(datos, producto));
         if (errores.length > 0) {
             return res.status(400).json({ success: false, message: 'Datos inválidos', errores });
         }
 
-        if (datos.PRO_SEM_ID) {
-            const semestre = await query(req.db, 'SELECT SEM_ID FROM MET_SEMESTRE WHERE SEM_ID = ?', [datos.PRO_SEM_ID]);
-            if (!semestre || semestre.length === 0) {
-                return res.status(400).json({ success: false, message: `El semestre ${datos.PRO_SEM_ID} no existe` });
+        // Se valida la pareja final: si solo cambia el semestre, la materia que ya
+        // tenía también debe pertenecer al nuevo.
+        if ('PRO_SEM_ID' in datos || 'PRO_MAT_ID' in datos) {
+            const semFinal = 'PRO_SEM_ID' in datos ? datos.PRO_SEM_ID : producto.PRO_SEM_ID;
+            const matFinal = 'PRO_MAT_ID' in datos ? datos.PRO_MAT_ID : producto.PRO_MAT_ID;
+
+            const errorRelacion = await validarSemestreYMateria(req.db, semFinal, matFinal);
+            if (errorRelacion) {
+                return res.status(400).json({ success: false, message: errorRelacion });
             }
         }
 
@@ -573,6 +653,7 @@ exports.updateProducto = async (req, res) => {
         if ('PRO_NOMBRE_DETALLADO' in datos) asignarSiCambia('PRO_NOMBRE_DETALLADO', datos.PRO_NOMBRE_DETALLADO || null, producto.PRO_NOMBRE_DETALLADO);
         if ('PRO_DESCRIPCION' in datos) asignarSiCambia('PRO_DESCRIPCION', datos.PRO_DESCRIPCION || null, producto.PRO_DESCRIPCION);
         if ('PRO_SEM_ID' in datos) asignarSiCambia('PRO_SEM_ID', datos.PRO_SEM_ID ?? null, producto.PRO_SEM_ID);
+        if ('PRO_MAT_ID' in datos) asignarSiCambia('PRO_MAT_ID', datos.PRO_MAT_ID ?? null, producto.PRO_MAT_ID);
         if ('PRO_EXE' in datos) asignarSiCambia('PRO_EXE', datos.PRO_EXE || null, producto.PRO_EXE);
         if ('PRO_TIPO' in datos) asignarSiCambia('PRO_TIPO', datos.PRO_TIPO || null, producto.PRO_TIPO);
         if (proFilesNuevo !== producto.PRO_FILES) asignarSiCambia('PRO_FILES', proFilesNuevo, producto.PRO_FILES);
@@ -713,4 +794,5 @@ exports.getTiposProducto = (req, res) => {
 exports.obtenerProducto = obtenerProducto;
 exports.incrementarVersion = incrementarVersion;
 exports.TIPOS_PRODUCTO = TIPOS_PRODUCTO;
+exports.TIPO_CON_MATERIA = TIPO_CON_MATERIA;
 exports.query = query;

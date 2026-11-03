@@ -73,11 +73,15 @@ function tipoDesdeNombre(nombreBloque) {
  * Los motivos por los que una materia no se puede eliminar. Devuelve una lista
  * vacía cuando sí se puede.
  *
- * @param {{multimedia: number, licencias: number, temas: number}} conteos
+ * @param {{multimedia: number, licencias: number, temas: number, productos: number}} conteos
  * @returns {string[]}
  */
 function motivosParaNoEliminar(conteos) {
     const motivos = [];
+
+    if (conteos.productos > 0) {
+        motivos.push(`tiene ${conteos.productos} producto(s) vinculado(s)`);
+    }
 
     if (conteos.multimedia > 0) {
         motivos.push(`tiene ${conteos.multimedia} archivo(s) de multimedia`);
@@ -136,6 +140,8 @@ exports.getMaterias = async (req, res) => {
                   WHERE mm.MUL_MAT_ID = m.MAT_ID) AS TOTAL_MULTIMEDIA,
                 (SELECT COUNT(*) FROM MET_LICENCIA ml
                   WHERE ml.LIC_MAT_ID = m.MAT_ID) AS TOTAL_LICENCIAS,
+                (SELECT COUNT(*) FROM MET_PRODUCTOS mp
+                  WHERE mp.PRO_MAT_ID = m.MAT_ID) AS TOTAL_PRODUCTOS,
                 (SELECT COUNT(*) FROM MET_BLOQUE mb
                   WHERE mb.BLQ_MAT_ID = m.MAT_ID) AS TOTAL_BLOQUES,
                 (SELECT COUNT(*) FROM MET_TEMA mt
@@ -167,7 +173,8 @@ exports.getMaterias = async (req, res) => {
                 const conteos = {
                     multimedia: materia.TOTAL_MULTIMEDIA,
                     licencias: materia.TOTAL_LICENCIAS,
-                    temas: materia.TOTAL_TEMAS
+                    temas: materia.TOTAL_TEMAS,
+                    productos: materia.TOTAL_PRODUCTOS
                 };
                 const motivos = motivosParaNoEliminar(conteos);
 
@@ -314,7 +321,7 @@ exports.createMateria = async (req, res) => {
  *
  * @param {object} conexion
  * @param {number} matId
- * @returns {Promise<{multimedia: number, licencias: number, temas: number}>}
+ * @returns {Promise<{multimedia: number, licencias: number, temas: number, productos: number}>}
  */
 async function contarVinculos(conexion, matId) {
     const [fila] = await ejecutar(
@@ -322,10 +329,11 @@ async function contarVinculos(conexion, matId) {
         `SELECT
             (SELECT COUNT(*) FROM MET_MULTIMEDIA WHERE MUL_MAT_ID = ?) AS multimedia,
             (SELECT COUNT(*) FROM MET_LICENCIA   WHERE LIC_MAT_ID = ?) AS licencias,
+            (SELECT COUNT(*) FROM MET_PRODUCTOS  WHERE PRO_MAT_ID = ?) AS productos,
             (SELECT COUNT(*) FROM MET_TEMA mt
               INNER JOIN MET_BLOQUE mb ON mb.BLQ_ID = mt.TEM_BLQ_ID
               WHERE mb.BLQ_MAT_ID = ?) AS temas`,
-        [matId, matId, matId]
+        [matId, matId, matId, matId]
     );
 
     return fila;
