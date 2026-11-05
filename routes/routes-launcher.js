@@ -20,5 +20,6 @@ module.exports = () => {
     router.post('/getConsultaVobookUsuario', launcher.getConsultaVobookUsuario);
     router.post('/getConsultaVoolanUsuario', launcher.getConsultaVoolanUsuario);
     router.get('/generarZips', launcher.generarZips);
+    router.get('/generarZipsPorPaquete', launcher.generarZipsPorPaquete);
     return router;
 }

@@ -466,3 +466,227 @@ const RUTA_ZIPS = path.resolve(
   }
 
 };
+
+// Lee MET_PAQUETE.PAQ_PRODUCTOS (arreglo JSON de PRO_ID, ej. [5,27]) y
+// devuelve los ids válidos sin repetir. Acepta también [{PRO_ID: 5}, ...].
+const obtenerIdsProductosPaquete = (valor) => {
+  if (valor === null || valor === undefined || String(valor).trim() === "") {
+    return [];
+  }
+
+  let lista;
+  try {
+    lista = JSON.parse(valor);
+  } catch (_) {
+    return [];
+  }
+
+  if (!Array.isArray(lista)) return [];
+
+  const ids = lista
+    .map((x) =>
+      Number(typeof x === "object" && x !== null ? x.PRO_ID ?? x.id : x)
+    )
+    .filter((n) => Number.isInteger(n) && n > 0);
+
+  return [...new Set(ids)];
+};
+
+//NUEVO
+exports.generarZipsPorPaquete = async (req, res) => {
+  const RUTA_ZIPS = path.resolve(
+    process.env.CONTENIDO_ZIPS || "/var/www/html/CONTENIDO_ZIPS"
+  );
+
+  try {
+    const { PAQ_ID } = req.query;
+    if (
+      PAQ_ID === undefined ||
+      !Number.isInteger(Number(PAQ_ID)) ||
+      Number(PAQ_ID) <= 0
+    ) {
+      return res.status(400).json({
+        RESPONSE: "0",
+        DESCRIPCION: "Debes proporcionar un PAQ_ID válido"
+      });
+    }
+
+    const paqueteId = Number(PAQ_ID);
+
+    // -----------------------------------------
+    // 2. CONSULTAR EL PAQUETE Y SUS PRODUCTOS
+    // -----------------------------------------
+    // PAQ_PRODUCTOS guarda un arreglo JSON de PRO_ID, por ejemplo [5,27]
+
+    const paquetes = await new Promise((resolve, reject) => {
+      req.db.query(
+        `SELECT PAQ_ID, PAQ_NOMBRE, PAQ_PRODUCTOS FROM MET_PAQUETE WHERE PAQ_ID = ?`,
+        [paqueteId],
+        (error, results) => {
+          if (error) return reject(error);
+          resolve(results);
+        }
+      );
+    });
+
+    if (!paquetes || paquetes.length === 0) {
+      return res.status(404).json({
+        RESPONSE: "0",
+        DESCRIPCION: "No se encontró el paquete solicitado"
+      });
+    }
+
+    const paquete = paquetes[0];
+    const productosIds = obtenerIdsProductosPaquete(paquete.PAQ_PRODUCTOS);
+
+    if (productosIds.length === 0) {
+      return res.status(404).json({
+        RESPONSE: "0",
+        DESCRIPCION: "El paquete no tiene productos registrados",
+        PAQ_ID: paquete.PAQ_ID,
+        PAQ_NOMBRE: paquete.PAQ_NOMBRE
+      });
+    }
+
+    // -----------------------------------------
+    // 3. CONSULTAR BLOQUES Y TEMAS DE LOS PRODUCTOS
+    // -----------------------------------------
+
+    const placeholders = productosIds.map(() => "?").join(",");
+
+    const queryContenido = `
+      SELECT DISTINCT
+        pr.PRO_ID,
+        pr.PRO_MAT_ID,
+        b.BLQ_ID,
+        b.BLQ_NUMERO,
+        b.BLQ_NOMBRE,
+        t.TEM_ID,
+        t.TEM_NOMBRE,
+        t.TEM_RUTA
+      FROM MET_PRODUCTOS pr
+      INNER JOIN MET_MATERIA m
+        ON m.MAT_ID = pr.PRO_MAT_ID
+      INNER JOIN MET_BLOQUE b
+        ON b.BLQ_MAT_ID = m.MAT_ID
+      INNER JOIN MET_TEMA t
+        ON t.TEM_BLQ_ID = b.BLQ_ID
+      WHERE pr.PRO_ID IN (${placeholders})
+        AND pr.PRO_TIPO = 'Plataforma'
+      ORDER BY
+        b.BLQ_NUMERO,
+        b.BLQ_ID,
+        t.TEM_ID
+    `;
+
+    const resultados = await new Promise((resolve, reject) => {
+      req.db.query(queryContenido, productosIds, (error, results) => {
+        if (error) return reject(error);
+        resolve(results);
+      });
+    });
+
+    if (!resultados || resultados.length === 0) {
+      return res.status(404).json({
+        RESPONSE: "0",
+        DESCRIPCION:
+          "No se encontraron bloques o temas de plataforma para el paquete indicado",
+        PAQ_ID: paquete.PAQ_ID,
+        PAQ_NOMBRE: paquete.PAQ_NOMBRE,
+        PRODUCTOS_CONSULTADOS: productosIds.length
+      });
+    }
+
+    // -----------------------------------------
+    // 3. AGRUPAR TEMAS POR BLOQUE
+    // -----------------------------------------
+    // Si dos productos del paquete comparten materia, el mismo tema puede
+    // venir repetido: se descarta por TEM_ID.
+
+    const bloques = new Map();
+
+    for (const row of resultados) {
+      if (!bloques.has(row.BLQ_ID)) {
+        bloques.set(row.BLQ_ID, {
+          BLQ_ID: row.BLQ_ID,
+          BLQ_NUMERO: row.BLQ_NUMERO,
+          BLQ_NOMBRE: row.BLQ_NOMBRE,
+          TEMAS: []
+        });
+      }
+
+      const bloque = bloques.get(row.BLQ_ID);
+
+      if (!bloque.TEMAS.some((t) => t.TEM_ID === row.TEM_ID)) {
+        bloque.TEMAS.push({
+          TEM_ID: row.TEM_ID,
+          TEM_NOMBRE: row.TEM_NOMBRE,
+          TEM_RUTA: row.TEM_RUTA
+        });
+      }
+    }
+
+    // -----------------------------------------
+    // 4. GENERAR UN ZIP POR BLOQUE
+    // -----------------------------------------
+
+    await fs.promises.mkdir(RUTA_ZIPS, { recursive: true });
+
+    const zipsGenerados = [];
+    const bloquesSinContenido = [];
+    const errores = [];
+
+    for (const bloque of bloques.values()) {
+      try {
+        const resultado = await crearZipBloque(bloque, bloque.TEMAS, RUTA_ZIPS);
+
+        if (resultado.RESPONSE === "1") {
+          zipsGenerados.push(resultado);
+        } else {
+          bloquesSinContenido.push(resultado);
+        }
+      } catch (error) {
+        errores.push({
+          BLOQUE_ID: bloque.BLQ_ID,
+          BLOQUE: bloque.BLQ_NOMBRE,
+          ERROR: error.message
+        });
+      }
+    }
+
+    // -----------------------------------------
+    // 5. RESPUESTA
+    // -----------------------------------------
+
+    const totalGenerados = zipsGenerados.length;
+
+    return res.status(200).json({
+      RESPONSE: totalGenerados > 0 ? "1" : "3",
+      DESCRIPCION:
+        totalGenerados > 0
+          ? "Generación de ZIPs terminada"
+          : "No se pudieron generar los ZIPs",
+
+      PAQ_ID: paquete.PAQ_ID,
+      PAQ_NOMBRE: paquete.PAQ_NOMBRE,
+      PRODUCTOS_CONSULTADOS: productosIds.length,
+
+      TOTAL_BLOQUES: bloques.size,
+      TOTAL_ZIPS_GENERADOS: totalGenerados,
+
+      CARPETA_DESTINO: RUTA_ZIPS,
+
+      ZIPS: zipsGenerados,
+      BLOQUES_SIN_CONTENIDO: bloquesSinContenido,
+      ERRORES: errores
+    });
+  } catch (error) {
+    console.error("Error en generarZipsPorPaquete:", error);
+
+    return res.status(500).json({
+      RESPONSE: "0",
+      DESCRIPCION: "Error al generar los ZIPs del paquete",
+      ERROR: error.message
+    });
+  }
+};
