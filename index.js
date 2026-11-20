@@ -206,6 +206,9 @@ app.use('/mapa/v1/launcher/', dbMiddleware, launcher());
 const admin = require('./routes/routes-admin');
 app.use('/mapa/v1/admin/', dbMiddleware, admin());
 
+const catalogo = require('./routes/routes-catalogo');
+app.use('/mapa/v1/catalogo/', dbMiddleware, catalogo());
+
 app.use((req, res) => {
     res.status(404).json({
         success: false,
