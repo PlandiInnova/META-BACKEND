@@ -11,48 +11,136 @@ const CARPETA_PORTADAS = path.join(
 );
 
 const TABLAS = {
-  subsistema: { tabla: 'CAT_SUBSISTEMA', id: 'SUB_ID', nombre: 'SUB_NOMBRE', portada: 'SUB_PORTADA', status: 'SUB_STATUS', padre: null },
-  semestre: { tabla: 'CAT_SEMESTRE', id: 'SEM_ID', nombre: 'SEM_NOMBRE', portada: 'SEM_PORTADA', status: 'SEM_STATUS', padre: 'SEM_SUB_ID' },
-  libro: { tabla: 'CAT_LIBRO', id: 'LIB_ID', nombre: 'LIB_NOMBRE', portada: 'LIB_PORTADA', status: 'LIB_STATUS', padre: 'LIB_SEM_ID' },
+  subsistema: { tabla: 'CAT_SUBSISTEMA', id: 'SUB_ID', portada: 'SUB_PORTADA', status: 'SUB_STATUS', insert: 'AM_InsertSubsistema', update: 'AM_updateSubsistema' },
+  semestre: { tabla: 'CAT_SEMESTRE', id: 'SEM_ID', portada: 'SEM_PORTADA', status: 'SEM_STATUS', insert: 'AM_InsertSemestre', update: 'AM_updateSemestre' },
+  libro: { tabla: 'CAT_LIBRO', id: 'LIB_ID', portada: 'LIB_PORTADA', status: 'LIB_STATUS', insert: 'AM_InsertLibro', update: 'AM_updateLibro' },
 };
 
-const borrarPortada = (archivo) => {
-  if (!archivo || archivo !== path.basename(archivo)) return;
-  fs.unlink(path.join(CARPETA_PORTADAS, archivo), () => {});
+const CARPETA_TMP = path.join(CARPETA_PORTADAS, '.tmp');
+const PREFIJO_PORTADA = '../catalogo/';
+
+const sinPrefijo = (valor) => String(valor || '').replace(/^(\.\.\/)?catalogo\//, '');
+
+const slug = (texto) => String(texto || '')
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+  .replace(/[^A-Za-z0-9\s]/g, ' ')
+  .trim()
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 4)
+  .join('')
+  .slice(0, 40) || 'SinNombre';
+
+const rutaAbsoluta = (valor) => {
+  const relativa = sinPrefijo(valor);
+  if (!relativa) return null;
+  const base = path.resolve(CARPETA_PORTADAS);
+  const absoluta = path.resolve(base, relativa);
+  return absoluta.startsWith(base + path.sep) ? absoluta : null;
+};
+
+const borrarPortada = (relativa) => {
+  const absoluta = rutaAbsoluta(relativa);
+  if (absoluta) fs.unlink(absoluta, () => {});
+};
+
+const descartarTemporal = (archivo) => {
+  if (archivo && archivo.path) fs.unlink(archivo.path, () => {});
+};
+
+const carpetaDestino = (db, tipo, padre, callback) => {
+  if (tipo === 'subsistema') return callback(null, '');
+
+  const query = tipo === 'semestre'
+    ? `SELECT SUB_NOMBRE FROM CAT_SUBSISTEMA WHERE SUB_ID = ?`
+    : `SELECT sb.SUB_NOMBRE, s.SEM_NOMBRE
+       FROM CAT_SEMESTRE s
+       INNER JOIN CAT_SUBSISTEMA sb ON sb.SUB_ID = s.SEM_SUB_ID
+       WHERE s.SEM_ID = ?`;
+
+  db.query(query, [padre], (error, results) => {
+    if (error) return callback(error);
+    if (results.length === 0) return callback(null, null);
+    const fila = results[0];
+    callback(null, tipo === 'semestre'
+      ? slug(fila.SUB_NOMBRE)
+      : path.posix.join(slug(fila.SUB_NOMBRE), slug(fila.SEM_NOMBRE)));
+  });
+};
+
+const nombreDisponible = (carpeta, base, ext, actual) => {
+  let intento = 1;
+  let relativa;
+  do {
+    relativa = path.posix.join(carpeta, `${base}${intento > 1 ? intento : ''}${ext}`);
+    intento++;
+  } while (relativa !== actual && fs.existsSync(rutaAbsoluta(relativa)));
+  return relativa;
+};
+
+const prepararPortada = (db, tipo, datos, archivo, actual, callback) => {
+  if (!archivo) return callback(null, null);
+
+  carpetaDestino(db, tipo, datos.padre, (error, carpeta) => {
+    if (error) return callback(error);
+    if (carpeta === null) {
+      return callback(null, null, tipo === 'semestre' ? "El subsistema seleccionado no existe." : "El semestre seleccionado no existe.");
+    }
+    const ext = path.extname(archivo.originalname || '').toLowerCase();
+    callback(null, PREFIJO_PORTADA + nombreDisponible(carpeta, slug(datos.nombre), ext, sinPrefijo(actual)));
+  });
+};
+
+const moverPortada = (archivo, relativa, callback) => {
+  const destino = rutaAbsoluta(relativa);
+  if (!destino) return callback(new Error(`Ruta de portada inválida: ${relativa}`));
+  fs.mkdir(path.dirname(destino), { recursive: true }, (error) => {
+    if (error) return callback(error);
+    fs.rename(archivo.path, destino, callback);
+  });
 };
 
 const errorConsulta = (res, ruta, error) => {
   if (error.code === 'ER_ROW_IS_REFERENCED_2') {
     return res.status(409).json({ error: `No se puede eliminar ${ruta}`, message: "El registro tiene registros relacionados, desactívalo en su lugar." });
   }
-  if (error.code === 'ER_NO_REFERENCED_ROW_2') {
-    return res.status(400).json({ error: `Error en ${ruta}`, message: "El registro padre seleccionado no existe." });
-  }
   res.status(500).json({ error: `Error en la consulta a la base de datos ${ruta}`, message: error.sqlMessage || error.message });
 };
 
-const leerCampos = (conf, body) => {
+const leerDatos = (tipo, body) => {
   const nombre = String(body.nombre || '').trim();
   if (nombre.length < 2) return { message: "El nombre es obligatorio (mínimo 2 caracteres)." };
 
-  const campos = {
-    [conf.nombre]: nombre,
-    [conf.status]: ['1', 'true'].includes(String(body.status)) ? 1 : 0,
+  const datos = {
+    nombre,
+    status: ['1', 'true'].includes(String(body.status)) ? 1 : 0,
+    padre: null,
+    isbn: String(body.isbn || '').trim() || null,
+    autores: String(body.autores || '').trim() || null,
+    link: String(body.link || '').trim() || null,
   };
 
-  if (conf.padre) {
-    const padre = parseInt(body.padre_id, 10);
-    if (!padre) return { message: "Se requiere el parámetro 'padre_id'." };
-    campos[conf.padre] = padre;
+  if (tipo !== 'subsistema') {
+    datos.padre = parseInt(body.padre_id, 10);
+    if (!datos.padre) return { message: "Se requiere el parámetro 'padre_id'." };
   }
 
-  if (conf.tabla === 'CAT_LIBRO') {
-    campos.LIB_ISBN = String(body.isbn || '').trim() || null;
-    campos.LIB_AUTORES = String(body.autores || '').trim() || null;
-    campos.LIB_LINK = String(body.link || '').trim() || null;
-  }
+  return { datos };
+};
 
-  return { campos };
+const parametros = (tipo, datos, portada) => ({
+  subsistema: [datos.nombre, portada],
+  semestre: [datos.padre, datos.nombre, portada],
+  libro: [datos.padre, datos.nombre, portada, datos.isbn, datos.autores, datos.link],
+}[tipo]);
+
+const llamar = (db, procedimiento, params, callback) => {
+  const query = `call ${procedimiento}(${params.map(() => '?').join(', ')})`;
+  db.query(query, params, (error, results) => {
+    if (error) return callback(error);
+    callback(null, results[0] && results[0][0] ? results[0][0] : {});
+  });
 };
 
 // Ejemplo de consulta usando la segunda conexión (req.dbCatalogoCatalogo)
@@ -167,11 +255,11 @@ exports.uploadPortada = (req, res, next) => {
   const upload = multer({
     storage: multer.diskStorage({
       destination: (req, file, cb) => {
-        fs.mkdir(CARPETA_PORTADAS, { recursive: true }, (error) => cb(error, CARPETA_PORTADAS));
+        fs.mkdir(CARPETA_TMP, { recursive: true }, (error) => cb(error, CARPETA_TMP));
       },
       filename: (req, file, cb) => {
         const ext = path.extname(file.originalname || '').toLowerCase();
-        cb(null, `portada-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}${ext}`);
+        cb(null, `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}${ext}`);
       },
     }),
     limits: { fileSize: 5 * 1024 * 1024 },
@@ -249,101 +337,165 @@ exports.getCatalogo = (req, res) => {
 };
 
 exports.addRegistro = (req, res) => {
-  const archivo = req.file ? req.file.filename : null;
+  const archivo = req.file || null;
   try {
-    const conf = TABLAS[req.body.tipo];
+    const tipo = req.body.tipo;
+    const conf = TABLAS[tipo];
     if (!conf) {
-      borrarPortada(archivo);
+      descartarTemporal(archivo);
       return res.status(400).json({ error: "Parámetro faltante", message: "Se requiere el parámetro 'tipo' (subsistema, semestre o libro)." });
     }
     if (!archivo) {
       return res.status(400).json({ error: "Parámetro faltante", message: "Se requiere la imagen de portada." });
     }
-    const { campos, message } = leerCampos(conf, req.body);
+    const { datos, message } = leerDatos(tipo, req.body);
     if (message) {
-      borrarPortada(archivo);
+      descartarTemporal(archivo);
       return res.status(400).json({ error: "Parámetro inválido", message });
     }
-    campos[conf.portada] = archivo;
 
-    req.dbCatalogo.query(`INSERT INTO ${conf.tabla} SET ?`, [campos], (error, results) => {
+    prepararPortada(req.dbCatalogo, tipo, datos, archivo, null, (error, portada, mensajePortada) => {
       if (error) {
-        borrarPortada(archivo);
+        descartarTemporal(archivo);
         return errorConsulta(res, '/addRegistro', error);
       }
-      res.status(200).json({ data: { id: results.insertId } });
+      if (!portada) {
+        descartarTemporal(archivo);
+        return res.status(400).json({ error: "Error en /addRegistro", message: mensajePortada });
+      }
+
+      llamar(req.dbCatalogo, conf.insert, parametros(tipo, datos, portada), (error, respuesta) => {
+        if (error) {
+          descartarTemporal(archivo);
+          return errorConsulta(res, '/addRegistro', error);
+        }
+        const id = Number(respuesta.RESPONSE);
+        if (!id) {
+          descartarTemporal(archivo);
+          return res.status(400).json({ error: "Error en /addRegistro", message: respuesta.DESCRIPCION });
+        }
+
+        moverPortada(archivo, portada, (error) => {
+          if (error) {
+            console.error("Error al mover la portada en addRegistro:", error);
+            descartarTemporal(archivo);
+            return res.status(500).json({ error: "Error en /addRegistro", message: "El registro se creó pero no se pudo guardar la portada." });
+          }
+          if (datos.status === 1) {
+            return res.status(200).json({ data: { id, portada }, message: respuesta.DESCRIPCION });
+          }
+
+          llamar(req.dbCatalogo, 'AM_updateStatus', [tipo, id, 0], (error) => {
+            if (error) return errorConsulta(res, '/addRegistro', error);
+            res.status(200).json({ data: { id, portada }, message: respuesta.DESCRIPCION });
+          });
+        });
+      });
     });
   } catch (error) {
-    borrarPortada(archivo);
+    descartarTemporal(archivo);
     console.error("Error en addRegistro:", error);
     res.status(500).json({ error: "Error al obtener addRegistro", detalle: error.message });
   }
 };
 
 exports.updateRegistro = (req, res) => {
-  const archivo = req.file ? req.file.filename : null;
+  const archivo = req.file || null;
   try {
-    const conf = TABLAS[req.body.tipo];
+    const tipo = req.body.tipo;
+    const conf = TABLAS[tipo];
     const id = parseInt(req.body.id, 10);
     if (!conf || !id) {
-      borrarPortada(archivo);
+      descartarTemporal(archivo);
       return res.status(400).json({ error: "Parámetro faltante", message: "Se requieren los parámetros 'tipo' e 'id'." });
     }
-    const { campos, message } = leerCampos(conf, req.body);
+    const { datos, message } = leerDatos(tipo, req.body);
     if (message) {
-      borrarPortada(archivo);
+      descartarTemporal(archivo);
       return res.status(400).json({ error: "Parámetro inválido", message });
     }
-    if (archivo) campos[conf.portada] = archivo;
 
-    req.dbCatalogo.query(`SELECT ${conf.portada} AS portada FROM ${conf.tabla} WHERE ${conf.id} = ?`, [id], (error, results) => {
+    const query = `SELECT ${conf.portada} AS portada, ${conf.status} AS status FROM ${conf.tabla} WHERE ${conf.id} = ?`;
+    req.dbCatalogo.query(query, [id], (error, results) => {
       if (error) {
-        borrarPortada(archivo);
+        descartarTemporal(archivo);
         return errorConsulta(res, '/updateRegistro', error);
       }
       if (results.length === 0) {
-        borrarPortada(archivo);
-        return res.status(404).json({ error: "No existe el registro /updateRegistro", message: `No existe el ${req.body.tipo} ${id}.` });
+        descartarTemporal(archivo);
+        return res.status(404).json({ error: "No existe el registro /updateRegistro", message: `No existe el ${tipo} ${id}.` });
       }
-      const portadaAnterior = results[0].portada;
+      const anterior = results[0];
 
-      req.dbCatalogo.query(`UPDATE ${conf.tabla} SET ? WHERE ${conf.id} = ?`, [campos, id], (error) => {
+      prepararPortada(req.dbCatalogo, tipo, datos, archivo, anterior.portada, (error, nueva, mensajePortada) => {
         if (error) {
-          borrarPortada(archivo);
+          descartarTemporal(archivo);
           return errorConsulta(res, '/updateRegistro', error);
         }
-        if (archivo && portadaAnterior) borrarPortada(portadaAnterior);
-        res.status(200).json({ data: { id } });
+        if (archivo && !nueva) {
+          descartarTemporal(archivo);
+          return res.status(400).json({ error: "Error en /updateRegistro", message: mensajePortada });
+        }
+        const portada = nueva || anterior.portada;
+
+        llamar(req.dbCatalogo, conf.update, [id, ...parametros(tipo, datos, portada)], (error, respuesta) => {
+          if (error) {
+            descartarTemporal(archivo);
+            return errorConsulta(res, '/updateRegistro', error);
+          }
+          if (Number(respuesta.RESPONSE) !== 1) {
+            descartarTemporal(archivo);
+            return res.status(400).json({ error: "Error en /updateRegistro", message: respuesta.DESCRIPCION });
+          }
+
+          const terminar = () => {
+            if (anterior.status === datos.status) {
+              return res.status(200).json({ data: { id, portada }, message: respuesta.DESCRIPCION });
+            }
+            llamar(req.dbCatalogo, 'AM_updateStatus', [tipo, id, datos.status], (error) => {
+              if (error) return errorConsulta(res, '/updateRegistro', error);
+              res.status(200).json({ data: { id, portada }, message: respuesta.DESCRIPCION });
+            });
+          };
+
+          if (!archivo) return terminar();
+
+          moverPortada(archivo, portada, (error) => {
+            if (error) {
+              console.error("Error al mover la portada en updateRegistro:", error);
+              descartarTemporal(archivo);
+              return res.status(500).json({ error: "Error en /updateRegistro", message: "El registro se actualizó pero no se pudo guardar la portada." });
+            }
+            if (anterior.portada && sinPrefijo(anterior.portada) !== sinPrefijo(portada)) borrarPortada(anterior.portada);
+            terminar();
+          });
+        });
       });
     });
   } catch (error) {
-    borrarPortada(archivo);
+    descartarTemporal(archivo);
     console.error("Error en updateRegistro:", error);
     res.status(500).json({ error: "Error al obtener updateRegistro", detalle: error.message });
   }
 };
 
-exports.deleteRegistro = (req, res) => {
+exports.updateStatus = (req, res) => {
   try {
-    const conf = TABLAS[req.body.tipo];
-    const id = parseInt(req.body.id, 10);
-    if (!conf || !id) {
-      return res.status(400).json({ error: "Parámetro faltante", message: "Se requieren los parámetros 'tipo' e 'id'." });
+    const { tipo, id, status } = req.body;
+    if (!TABLAS[tipo] || !parseInt(id, 10) || status === undefined) {
+      return res.status(400).json({ error: "Parámetro faltante", message: "Se requieren los parámetros 'tipo', 'id' y 'status'." });
     }
-    req.dbCatalogo.query(`SELECT ${conf.portada} AS portada FROM ${conf.tabla} WHERE ${conf.id} = ?`, [id], (error, results) => {
-      if (error) return errorConsulta(res, '/deleteRegistro', error);
-      if (results.length === 0) {
-        return res.status(404).json({ error: "No existe el registro /deleteRegistro", message: `No existe el ${req.body.tipo} ${id}.` });
+    const estatus = ['1', 'true'].includes(String(status)) ? 1 : 0;
+    llamar(req.dbCatalogo, 'AM_updateStatus', [tipo, parseInt(id, 10), estatus], (error, respuesta) => {
+      if (error) return errorConsulta(res, '/updateStatus', error);
+      if (Number(respuesta.RESPONSE) !== 1) {
+        return res.status(400).json({ error: "Error en /updateStatus", message: respuesta.DESCRIPCION });
       }
-
-      req.dbCatalogo.query(`DELETE FROM ${conf.tabla} WHERE ${conf.id} = ?`, [id], (error) => {
-        if (error) return errorConsulta(res, '/deleteRegistro', error);
-        borrarPortada(results[0].portada);
-        res.status(200).json({ data: { id } });
-      });
+      res.status(200).json({ data: { id, status: estatus }, message: respuesta.DESCRIPCION });
     });
   } catch (error) {
-    console.error("Error en deleteRegistro:", error);
-    res.status(500).json({ error: "Error al obtener deleteRegistro", detalle: error.message });
+    console.error("Error en updateStatus:", error);
+    res.status(500).json({ error: "Error al obtener updateStatus", detalle: error.message });
   }
 };
+

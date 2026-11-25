@@ -11,6 +11,6 @@ module.exports = () => {
     router.get('/getCatalogo', catalogo.getCatalogo);
     router.post('/addRegistro', catalogo.uploadPortada, catalogo.addRegistro);
     router.post('/updateRegistro', catalogo.uploadPortada, catalogo.updateRegistro);
-    router.post('/deleteRegistro', catalogo.deleteRegistro);
+    router.post('/updateStatus', catalogo.updateStatus);
     return router;
 }
