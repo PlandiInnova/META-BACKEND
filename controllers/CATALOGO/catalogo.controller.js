@@ -284,6 +284,53 @@ exports.uploadPortada = (req, res, next) => {
   });
 };
 
+const NOMBRE_PORTADA_GENERAL = 'portada-general';
+const EXT_PORTADA_GENERAL = /^portada-general\.(png|jpe?g|webp|gif)$/i;
+
+const archivosPortadaGeneral = () => {
+  if (!fs.existsSync(CARPETA_PORTADAS)) return [];
+  return fs.readdirSync(CARPETA_PORTADAS).filter((archivo) => EXT_PORTADA_GENERAL.test(archivo));
+};
+
+exports.getPortadaGeneral = (req, res) => {
+  try {
+    const [archivo] = archivosPortadaGeneral();
+    if (!archivo) {
+      return res.status(200).json({ data: { portada: null } });
+    }
+    const version = Math.round(fs.statSync(path.join(CARPETA_PORTADAS, archivo)).mtimeMs);
+    res.status(200).json({ data: { portada: `${PREFIJO_PORTADA}${archivo}?v=${version}` } });
+  } catch (error) {
+    console.error("Error en getPortadaGeneral:", error);
+    res.status(500).json({ error: "Error al obtener getPortadaGeneral", detalle: error.message });
+  }
+};
+
+exports.updatePortadaGeneral = (req, res) => {
+  const archivo = req.file || null;
+  try {
+    if (!archivo) {
+      return res.status(400).json({ error: "Parámetro faltante", message: "Se requiere la imagen de la portada general." });
+    }
+    const nombre = `${NOMBRE_PORTADA_GENERAL}${path.extname(archivo.originalname || '').toLowerCase()}`;
+    const anteriores = archivosPortadaGeneral().filter((anterior) => anterior !== nombre);
+
+    moverPortada(archivo, nombre, (error) => {
+      if (error) {
+        console.error("Error al mover la portada general:", error);
+        descartarTemporal(archivo);
+        return res.status(500).json({ error: "Error en /updatePortadaGeneral", message: "No se pudo guardar la portada general." });
+      }
+      anteriores.forEach((anterior) => borrarPortada(anterior));
+      res.status(200).json({ data: { portada: `${PREFIJO_PORTADA}${nombre}?v=${Date.now()}` }, message: "PORTADA GENERAL ACTUALIZADA CORRECTAMENTE" });
+    });
+  } catch (error) {
+    descartarTemporal(archivo);
+    console.error("Error en updatePortadaGeneral:", error);
+    res.status(500).json({ error: "Error al obtener updatePortadaGeneral", detalle: error.message });
+  }
+};
+
 exports.getCatalogo = (req, res) => {
   try {
     const query = `

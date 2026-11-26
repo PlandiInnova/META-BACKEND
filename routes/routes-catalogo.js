@@ -9,6 +9,8 @@ module.exports = () => {
     router.post('/getLibros', catalogo.getLibros);
 
     router.get('/getCatalogo', catalogo.getCatalogo);
+    router.get('/getPortadaGeneral', catalogo.getPortadaGeneral);
+    router.post('/updatePortadaGeneral', catalogo.uploadPortada, catalogo.updatePortadaGeneral);
     router.post('/addRegistro', catalogo.uploadPortada, catalogo.addRegistro);
     router.post('/updateRegistro', catalogo.uploadPortada, catalogo.updateRegistro);
     router.post('/updateStatus', catalogo.updateStatus);
