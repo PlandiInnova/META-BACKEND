@@ -8,6 +8,7 @@ IF EXISTS(SELECT 1 FROM CAT_SUBSISTEMA) THEN
 SELECT  SUB_ID AS id,
         SUB_NOMBRE AS nombre,
         SUB_PORTADA AS portada,
+        SUB_COLOR AS color,
         SUB_STATUS AS status,
         NULL AS padre_id,
         NULL AS padre_nombre FROM CAT_SUBSISTEMA

@@ -119,6 +119,7 @@ const leerDatos = (tipo, body) => {
     isbn: String(body.isbn || '').trim() || null,
     autores: String(body.autores || '').trim() || null,
     link: String(body.link || '').trim() || null,
+    color: /^#[0-9a-f]{6}$/i.test(String(body.color || '').trim()) ? String(body.color).trim().toUpperCase() : null,
   };
 
   if (tipo !== 'subsistema') {
@@ -130,7 +131,7 @@ const leerDatos = (tipo, body) => {
 };
 
 const parametros = (tipo, datos, portada) => ({
-  subsistema: [datos.nombre, portada],
+  subsistema: [datos.nombre, portada, datos.color],
   semestre: [datos.padre, datos.nombre, portada],
   libro: [datos.padre, datos.nombre, portada, datos.isbn, datos.autores, datos.link],
 }[tipo]);
@@ -334,7 +335,7 @@ exports.updatePortadaGeneral = (req, res) => {
 exports.getCatalogo = (req, res) => {
   try {
     const query = `
-      SELECT sb.SUB_ID, sb.SUB_NOMBRE, sb.SUB_PORTADA,
+      SELECT sb.*,
              s.SEM_ID, s.SEM_NOMBRE, s.SEM_PORTADA,
              l.LIB_ID, l.LIB_NOMBRE, l.LIB_PORTADA, l.LIB_ISBN, l.LIB_AUTORES, l.LIB_LINK
       FROM CAT_SUBSISTEMA sb
@@ -351,7 +352,7 @@ exports.getCatalogo = (req, res) => {
 
       for (const fila of results) {
         if (!subs.has(fila.SUB_ID)) {
-          const sub = { id: fila.SUB_ID, nombre: fila.SUB_NOMBRE, portada: fila.SUB_PORTADA, semestres: [] };
+          const sub = { id: fila.SUB_ID, nombre: fila.SUB_NOMBRE, portada: fila.SUB_PORTADA, color: fila.SUB_COLOR || null, semestres: [] };
           subs.set(fila.SUB_ID, sub);
           subsistemas.push(sub);
         }
