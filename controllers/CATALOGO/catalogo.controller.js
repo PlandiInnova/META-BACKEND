@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 
 const CARPETA_PORTADAS = path.join(
   process.env.NODE_ENV === 'production'
@@ -547,3 +548,47 @@ exports.updateStatus = (req, res) => {
   }
 };
 
+// Login del Administrador de catálogo (BD_CATALOGO.CAT_USUARIO_ADMIN)
+// AM_validarUsuAdmin regresa RESPONSE: 1 = ok, 2 = usuario desactivado, 0 = no existe
+exports.validarUsuAdmin = (req, res) => {
+  try {
+    const usuario = String(req.body.username || '').trim();
+    const password = String(req.body.password || '');
+    if (!usuario || !password) {
+      return res.status(400).json({ error: "Parámetro faltante", message: "Usuario y contraseña son requeridos." });
+    }
+
+    req.dbCatalogo.query('call AM_validarUsuAdmin(?, ?)', [usuario, password], (error, results) => {
+      if (error) return errorConsulta(res, '/validarUsuAdmin', error);
+
+      const fila = results[0] && results[0][0] ? results[0][0] : {};
+      const respuesta = Number(fila.RESPONSE);
+
+      if (respuesta === 2) {
+        return res.status(403).json({ error: "Usuario desactivado", message: fila.DESCRIPCION || "Usuario desactivado" });
+      }
+      if (respuesta !== 1) {
+        return res.status(401).json({ error: "Credenciales inválidas", message: "Usuario o contraseña incorrectos" });
+      }
+
+      // Nunca regresar USU_PASSWORD al cliente
+      const tipo = String(fila.USU_TIPO || '').trim().toLowerCase();
+      const JWT_SECRET = process.env.JWT_SECRET || 'tu-secret-key-cambiar-en-produccion';
+      const token = jwt.sign(
+        { userId: fila.USU_ID, username: fila.USU_USUARIO, userType: tipo },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      res.status(200).json({
+        token,
+        id: fila.USU_ID,
+        username: fila.USU_USUARIO,
+        userType: tipo
+      });
+    });
+  } catch (error) {
+    console.error("Error en validarUsuAdmin:", error);
+    res.status(500).json({ error: "Error al obtener validarUsuAdmin", detalle: error.message });
+  }
+};

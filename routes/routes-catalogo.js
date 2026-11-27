@@ -3,6 +3,8 @@ const router = express.Router();
 const catalogo = require('../controllers/CATALOGO/catalogo.controller');
 
 module.exports = () => {
+    router.post('/validarUsuAdmin', catalogo.validarUsuAdmin);
+
     router.get('/getTestCatalogo', catalogo.getTestCatalogo);
     router.post('/getSubsistemas', catalogo.getSubsistemas);
     router.post('/getSemestres', catalogo.getSemestres);
