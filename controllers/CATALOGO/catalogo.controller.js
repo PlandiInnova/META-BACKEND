@@ -7,7 +7,7 @@ const CARPETA_PORTADAS = path.join(
   process.env.NODE_ENV === 'production'
     ? (process.env.UPLOAD_BASE_PATH || '/var/www/html')
     : path.resolve(__dirname, '../../../var/www/html'),
-  'catalogo'
+  'catalogo-data'
 );
 
 const TABLAS = {
@@ -17,9 +17,9 @@ const TABLAS = {
 };
 
 const CARPETA_TMP = path.join(CARPETA_PORTADAS, '.tmp');
-const PREFIJO_PORTADA = '../catalogo/';
+const PREFIJO_PORTADA = '../catalogo-data/';
 
-const sinPrefijo = (valor) => String(valor || '').replace(/^(\.\.\/)?catalogo\//, '');
+const sinPrefijo = (valor) => String(valor || '').replace(/^(\.\.\/)?catalogo(-data)?\//, '');
 
 const slug = (texto) => String(texto || '')
   .normalize('NFD')

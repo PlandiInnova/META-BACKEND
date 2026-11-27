@@ -4,6 +4,9 @@ const config = require('./config')[process.env.NODE_ENV || 'development'];
 
 // Crea un pool para la base indicada (mismo host, usuario y contraseña)
 function crearPool(database, nombre) {
+    if (!database) {
+        console.error(`❌ Falta el nombre de la base de datos ${nombre} en el .env (${process.env.NODE_ENV || 'development'}). Las consultas responderán "No database selected".`);
+    }
     const pool = mysql.createPool({
         host: config.host,
         port: config.port,
